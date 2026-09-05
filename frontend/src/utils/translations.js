@@ -19,6 +19,8 @@ export const translations = {
     noMuseumAvailable: 'No museum information available right now.',
     
     // Main Menu options
+    menuMuseumInfo: '🏛️ Museum Info & Exhibits',
+    viewFullMuseumPage: '🏛️ Full Museum Profile',
     menuViewPrices: '💰 View Prices',
     menuTimings: '🕐 Museum Timings',
     menuContact: '📞 Contact Info',
@@ -131,6 +133,8 @@ export const translations = {
     noMuseumAvailable: 'தற்போது அருங்காட்சியக தகவல்கள் கிடைக்கவில்லை.',
     
     // Main Menu options
+    menuMuseumInfo: '🏛️ அருங்காட்சியக தகவல்கள் & கண்காட்சிகள்',
+    viewFullMuseumPage: '🏛️ அருங்காட்சியக விவரக்குறிப்பு',
     menuViewPrices: '💰 கட்டண விவரங்கள்',
     menuTimings: '🕐 அருங்காட்சியக நேரம்',
     menuContact: '📞 தொடர்பு விவரம்',
@@ -242,6 +246,8 @@ export const translations = {
     noMuseumAvailable: 'वर्तमान में कोई संग्रहालय जानकारी उपलब्ध नहीं है।',
     
     // Main Menu options
+    menuMuseumInfo: '🏛️ संग्रहालय जानकारी और प्रदर्शनियां',
+    viewFullMuseumPage: '🏛️ संग्रहालय प्रोफ़ाइल देखें',
     menuViewPrices: '💰 टिकट दरें',
     menuTimings: '🕐 संग्रहालय का समय',
     menuContact: '📞 संपर्क विवरण',
@@ -353,6 +359,8 @@ export const translations = {
     noMuseumAvailable: 'നിലവിൽ മ്യൂസിയം വിവരങ്ങൾ ലഭ്യമല്ല.',
     
     // Main Menu options
+    menuMuseumInfo: '🏛️ മ്യൂസിയം വിവരങ്ങളും പ്രദർശനങ്ങളും',
+    viewFullMuseumPage: '🏛️ മ്യൂസിയം പ്രൊഫൈൽ കാണുക',
     menuViewPrices: '💰 നിരക്കുകൾ കാണുക',
     menuTimings: '🕐 മ്യൂസിയം സമയം',
     menuContact: '📞 ബന്ധപ്പെടാനുള്ള വിവരങ്ങൾ',
@@ -464,6 +472,8 @@ export const translations = {
     noMuseumAvailable: 'ప్రస్తుతం మ్యూజియం సమాచారం అందుబాటులో లేదు.',
     
     // Main Menu options
+    menuMuseumInfo: '🏛️ మ్యూజియం సమాచారం & ప్రదర్శనలు',
+    viewFullMuseumPage: '🏛️ మ్యూజియం ప్రొఫైల్ చూడండి',
     menuViewPrices: '💰 ధరల వివరాలు',
     menuTimings: '🕐 మ్యూజియం సమయాలు',
     menuContact: '📞 సంప్రదింపు వివరాలు',

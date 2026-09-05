@@ -20,4 +20,7 @@ public interface ShowRepository extends JpaRepository<Show, Long> {
     Integer countBookedTickets(@Param("showId") Long showId);
     
     Long countByMuseumId(Long museumId);
+
+    @Query("SELECT s FROM Show s WHERE s.museum.id = :museumId AND s.status = 'ACTIVE'")
+    List<Show> findActiveShowsByMuseumId(@Param("museumId") Long museumId);
 }

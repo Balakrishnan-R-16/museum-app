@@ -110,4 +110,19 @@ export const locationAPI = {
   reverseGeocode: (lat, lon) => api.get('/location/reverse', { params: { lat, lon } }),
 };
 
+// ── AI APIs (all calls go through backend — Gemini key is server-side only) ──
+const AI_TIMEOUT = 45000; // AI calls may take longer
+export const aiAPI = {
+  // Admin endpoints (require MUSEUM JWT)
+  crowdForecast:       ()                    => api.post('/owner/ai/crowd-forecast', {}, { timeout: AI_TIMEOUT }),
+  yieldRecommendation: ()                    => api.post('/owner/ai/yield-recommendation', {}, { timeout: AI_TIMEOUT }),
+  sentimentAnalysis:   ()                    => api.post('/owner/ai/sentiment-analysis', {}, { timeout: AI_TIMEOUT }),
+  askBusiness:         (question)            => api.post('/owner/ai/ask', { question }, { timeout: AI_TIMEOUT }),
+  draftReviewResponse: (reviewId, tone)      => api.post('/owner/ai/review-response', { reviewId, tone }, { timeout: AI_TIMEOUT }),
+
+  // Public endpoint (no auth required)
+  visitorGuide:        (museumId, question, lang) =>
+    api.post('/public/ai/visitor-guide', { museumId, question, lang }, { timeout: AI_TIMEOUT }),
+};
+
 export default api;

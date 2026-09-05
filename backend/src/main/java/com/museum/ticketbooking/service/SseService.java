@@ -16,6 +16,9 @@ public class SseService {
 
     // Map of MuseumID -> List of connected SSE Emitters
     private final Map<Long, List<SseEmitter>> emittersMap = new ConcurrentHashMap<>();
+    
+    // Global public connections
+    private final List<SseEmitter> globalEmitters = new CopyOnWriteArrayList<>();
 
     public SseEmitter subscribe(Long museumId) {
         SseEmitter emitter = new SseEmitter(60 * 60 * 1000L); // 1 hour timeout
@@ -63,6 +66,38 @@ public class SseService {
         }
     }
 
+    public SseEmitter subscribeGlobal() {
+        SseEmitter emitter = new SseEmitter(60 * 60 * 1000L); // 1 hour timeout
+        
+        globalEmitters.add(emitter);
+
+        emitter.onCompletion(() -> globalEmitters.remove(emitter));
+        emitter.onTimeout(() -> globalEmitters.remove(emitter));
+        emitter.onError((e) -> globalEmitters.remove(emitter));
+
+        try {
+            emitter.send(SseEmitter.event().name("connected").data("Global SSE Connection Established"));
+        } catch (IOException e) {
+            globalEmitters.remove(emitter);
+        }
+
+        return emitter;
+    }
+
+    public void emitGlobalEvent(String eventName, Object data) {
+        List<SseEmitter> deadEmitters = new ArrayList<>();
+        globalEmitters.forEach(emitter -> {
+            try {
+                emitter.send(SseEmitter.event()
+                        .name(eventName)
+                        .data(data));
+            } catch (IOException e) {
+                deadEmitters.add(emitter);
+            }
+        });
+        globalEmitters.removeAll(deadEmitters);
+    }
+
     // Keep connections alive
     @Scheduled(fixedRate = 25000)
     public void sendHeartbeat() {
@@ -77,5 +112,16 @@ public class SseService {
             });
             list.removeAll(deadEmitters);
         });
+
+        // Heartbeat for global
+        List<SseEmitter> deadGlobalEmitters = new ArrayList<>();
+        globalEmitters.forEach(emitter -> {
+            try {
+                emitter.send(SseEmitter.event().name("heartbeat").data("ping"));
+            } catch (IOException e) {
+                deadGlobalEmitters.add(emitter);
+            }
+        });
+        globalEmitters.removeAll(deadGlobalEmitters);
     }
 }

@@ -27,7 +27,7 @@ const Home = () => {
       const res = await publicAPI.searchMuseums();
       let list = res?.data ?? res ?? [];
       list = Array.isArray(list) ? list : [];
-      
+
       if (searchParams.query) {
         const q = searchParams.query.toLowerCase();
         list = list.filter(m => m.museumName?.toLowerCase().includes(q) || m.tagline?.toLowerCase().includes(q));
@@ -45,7 +45,7 @@ const Home = () => {
       if (filters.maxPrice === 0) {
         list = list.filter(m => (m.adultPrice === 0 || m.adultPrice == null) && (m.childPrice === 0 || m.childPrice == null));
       }
-      
+
       setMuseums(list);
     } catch {
       toast.error('Failed to fetch museums');
@@ -59,6 +59,34 @@ const Home = () => {
   useEffect(() => {
     fetchMuseums();
   }, [fetchMuseums]);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/public/sse/museums');
+
+    eventSource.addEventListener('museum_registered', (event) => {
+      try {
+        const newMuseum = JSON.parse(event.data);
+        setMuseums((prev) => {
+          if (prev.some(m => m.id === newMuseum.id)) return prev;
+          return [newMuseum, ...prev];
+        });
+        toast.success(`Live Update: New museum registered - ${newMuseum.museumName}!`, {
+          icon: '🏛️',
+          duration: 5000,
+        });
+      } catch (e) {
+        console.error('Error parsing SSE data', e);
+      }
+    });
+
+    eventSource.addEventListener('connected', (event) => {
+      console.log('SSE Connected:', event.data);
+    });
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   const handleSearch = useCallback((params) => {
     setSearchParams(params);
@@ -77,7 +105,7 @@ const Home = () => {
             <img src="/images/landing/renaissance-hall.jpg" alt="Renaissance Hall" className="w-full h-full object-cover" />
           </div>
         </div>
-        
+
         <div className="relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 mt-6">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-3 text-amber-200 mb-7">
@@ -115,14 +143,14 @@ const Home = () => {
 
       {/* ── MAIN CONTENT ── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        
+
         {/* Curated Sections (Only show if no search/filters active) */}
         {!searchParams.query && !searchParams.location && Object.keys(filters).length === 0 && (
           <div className="mb-16">
-            <CuratedSection 
-              title="Popular Destinations" 
+            <CuratedSection
+              title="Popular Destinations"
               subtitle="Most visited museums this week"
-              museums={museums.filter(m => m.averageRating >= 4.0 || m.bookingStatus)} 
+              museums={museums.filter(m => m.averageRating >= 4.0 || m.bookingStatus)}
               isLoading={isInitialLoad}
             />
           </div>
@@ -132,7 +160,7 @@ const Home = () => {
           {/* Mobile Filter Toggle */}
           <div className="lg:hidden flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-900">All Museums</h2>
-            <button 
+            <button
               onClick={() => setIsFilterOpen(!isFilterOpen)}
               className="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700"
             >
@@ -144,9 +172,9 @@ const Home = () => {
           {/* Filter Sidebar */}
           <div className={`lg:w-1/4 ${isFilterOpen ? 'block' : 'hidden'} lg:block`}>
             <div className="sticky top-24">
-              <FilterPanel 
-                filters={filters} 
-                onFilterChange={setFilters} 
+              <FilterPanel
+                filters={filters}
+                onFilterChange={setFilters}
                 isOpen={isFilterOpen}
                 onClose={() => setIsFilterOpen(false)}
               />
@@ -163,16 +191,16 @@ const Home = () => {
                 </h2>
                 <p className="text-gray-500 text-sm mt-1">Showing {museums.length} museums</p>
               </div>
-              
+
               <div className="flex bg-gray-100 p-1 rounded-lg">
-                <button 
+                <button
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded-md flex items-center transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
                   title="Grid View"
                 >
                   <Grid className="w-4 h-4" />
                 </button>
-                <button 
+                <button
                   onClick={() => setViewMode('map')}
                   className={`p-2 rounded-md flex items-center transition-colors ${viewMode === 'map' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
                   title="Map View"
@@ -200,11 +228,11 @@ const Home = () => {
                 ))}
               </div>
             ) : museums.length === 0 ? (
-              <EmptyState 
-                title="No museums found" 
+              <EmptyState
+                title="No museums found"
                 message="Try adjusting your search or filters to find what you're looking for."
                 action={
-                  <button onClick={() => { setSearchParams({query: '', location: ''}); setFilters({}); }} className="text-indigo-600 font-medium hover:text-indigo-800">
+                  <button onClick={() => { setSearchParams({ query: '', location: '' }); setFilters({}); }} className="text-indigo-600 font-medium hover:text-indigo-800">
                     Clear all filters
                   </button>
                 }
@@ -221,7 +249,7 @@ const Home = () => {
           </div>
         </div>
       </div>
-      
+
       {/* ── HOW IT WORKS (USER GUIDE) ── */}
       <div className="bg-white py-24 border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -309,7 +337,7 @@ const Home = () => {
         <div className="absolute inset-0 bg-[url(/images/landing/natural-history.jpg)] bg-cover bg-center"></div>
         <div className="absolute inset-0 bg-stone-900/70 backdrop-blur-[2px]"></div>
         <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent"></div>
-        
+
         <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
           <Building2 className="w-16 h-16 text-stone-300 mx-auto mb-6 drop-shadow-xl" />
           <h2 className="text-4xl font-extrabold text-white mb-6 drop-shadow-lg">Digitize Your Museum Today</h2>

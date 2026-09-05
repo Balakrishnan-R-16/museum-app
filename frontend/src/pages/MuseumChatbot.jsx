@@ -2,12 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, History, X, CheckCircle, Clock, CreditCard,
   ChevronRight, Ticket, ArrowLeft, Eye, EyeOff, Globe,
-  Send, Sparkles
+  Send, Sparkles, ExternalLink, Landmark, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as api from '../services/api';
 import { loadRazorpayScript } from '../utils/loadRazorpay';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { LANGUAGES, getTranslation } from '../utils/translations';
 
 /* ──────────────────────────────────────────────
@@ -15,6 +15,7 @@ import { LANGUAGES, getTranslation } from '../utils/translations';
 ────────────────────────────────────────────── */
 const STEP = {
   MAIN_MENU: 'MAIN_MENU',
+  VIEW_MUSEUM_PROFILE: 'VIEW_MUSEUM_PROFILE',
   VIEW_PRICES: 'VIEW_PRICES',
   VIEW_TIMINGS: 'VIEW_TIMINGS',
   VIEW_CONTACT: 'VIEW_CONTACT',
@@ -43,6 +44,7 @@ const fmtTime  = (d) => new Date(d).toLocaleTimeString('en-IN', { hour:'2-digit'
 ────────────────────────────────────────────── */
 const MuseumChatbot = () => {
   const { id: paramId } = useParams();
+  const navigate = useNavigate();
 
   /* Language state (persisted) */
   const [lang, setLang] = useState(() => localStorage.getItem('chatbot_lang') || 'en');
@@ -192,7 +194,7 @@ const MuseumChatbot = () => {
     toast.success(`Language switched to ${LANGUAGES.find(l => l.code === newLang)?.native || newLang}`);
   };
 
-  /* ── AI Guide Handler ── */
+  /* ── AI Guide Handler (Real Gemini Backend Integration) ── */
   const handleAskAi = async () => {
     const question = textInput.trim();
     if (!question) return;
@@ -201,64 +203,51 @@ const MuseumChatbot = () => {
     setAiLoading(true);
     setAiSuggestedAction(null);
     try {
-      const target = selectedMuseum || museums[0];
-      const context = target
-        ? `Museum: ${target.museumName}. Location: ${target.location || ''}. ` +
-          `Adult price: ₹${target.adultPrice || target.adultTicketPrice || 0}. ` +
-          `Child price: ₹${target.childPrice || target.childTicketPrice || 0}. ` +
-          `Timings: ${target.openingTime || '09:00'} - ${target.closingTime || '17:00'}.`
-        : 'A museum ticketing platform.';
-
-      const lowerQ = question.toLowerCase();
-      let answer = '';
-
-      if (lowerQ.includes('price') || lowerQ.includes('ticket') || lowerQ.includes('cost') || lowerQ.includes('fee')) {
-        answer = target
-          ? `🎫 Ticket prices at **${target.museumName}**:\n\n👨 Adult: ₹${target.adultPrice || target.adultTicketPrice || 0}\n👦 Child: ₹${target.childPrice || target.childTicketPrice || 0}\n\nWould you like to book a ticket?`
-          : t.noMuseumAvailable;
-        setAiSuggestedAction({ type: 'BOOK', label: t.menuBookTicket });
-      } else if (lowerQ.includes('time') || lowerQ.includes('hour') || lowerQ.includes('open') || lowerQ.includes('close')) {
-        answer = target
-          ? `🕐 **${target.museumName}** is open:\n\n✅ ${target.openingTime || '09:00'} – ${target.closingTime || '17:00'} daily`
-          : t.noMuseumAvailable;
-      } else if (lowerQ.includes('park') || lowerQ.includes('parking')) {
-        const hasParking = target?.amenities?.includes('PARKING');
-        answer = target
-          ? (hasParking ? `🚗 Yes! **${target.museumName}** has parking available.` : `🚗 Parking information not available. Please contact the museum directly.`)
-          : t.noMuseumAvailable;
-      } else if (lowerQ.includes('wheel') || lowerQ.includes('disable') || lowerQ.includes('access')) {
-        const hasWheel = target?.amenities?.includes('WHEELCHAIR');
-        answer = target
-          ? (hasWheel ? `♿ Yes! **${target.museumName}** is wheelchair accessible.` : `♿ Wheelchair accessibility information not confirmed. Please contact the museum.`)
-          : t.noMuseumAvailable;
-      } else if (lowerQ.includes('show') || lowerQ.includes('event') || lowerQ.includes('exhibit')) {
-        if (shows.length > 0) {
-          answer = `🎭 Current shows:\n\n` + shows.slice(0, 3).map(s => `• **${s.showName || s.name}** - ₹${s.price}`).join('\n');
-          setAiSuggestedAction({ type: 'SHOWS', label: t.menuSpecialShows });
-        } else {
-          answer = target
-            ? `🏛️ **${target.museumName}** has a rich collection of exhibits. Visit us to explore our galleries!`
-            : t.noMuseumAvailable;
-        }
-      } else if (lowerQ.includes('book') || lowerQ.includes('reserv') || lowerQ.includes('buy')) {
-        answer = `🎫 I can help you book tickets! Click **Book Ticket** to get started.`;
-        setAiSuggestedAction({ type: 'BOOK', label: t.menuBookTicket });
-      } else {
-        answer = target
-          ? `🏛️ Welcome to **${target.museumName}**!\n\n${context}\n\nI can help with ticket prices, timings, shows, parking, and booking. What would you like to know?`
-          : `🏛️ Welcome to Museum Ticket Booking! I can help with ticket prices, museum timings, special shows, and bookings. What would you like to know?`;
+      const target = selectedMuseum || museum || museums[0];
+      if (!target || !target.id) {
+        addBot('Please select a museum to ask questions.');
+        return;
       }
 
-      addBot(answer);
-    } catch {
-      addBot('Sorry, I could not process your question. Please try again.');
+      const res = await api.aiAPI.visitorGuide(target.id, question, lang);
+      const payload = res?.data || res;
+      if (res?.success === false || payload?.success === false) {
+        const errMsg = payload?.message || res?.message || 'Sorry, I could not process your question. Please try again.';
+        addBot(errMsg);
+      } else {
+        const guideData = (payload?.answer ? payload : (payload?.data || res?.data || payload));
+        addBot(guideData?.answer || 'Here is the information you requested.');
+
+        if (guideData?.actions && guideData.actions.length > 0) {
+          const action = guideData.actions[0];
+          setAiSuggestedAction({
+            type: action.type,
+            label: action.label || (action.type === 'BOOK_TICKETS' ? t.menuBookTicket : t.menuSpecialShows)
+          });
+        }
+      }
+    } catch (err) {
+      console.error('AI Visitor Guide request failed:', err);
+      addBot('Sorry, the AI guide is temporarily unavailable. Please try again or browse the menu below.');
     } finally {
       setAiLoading(false);
     }
   };
 
+  /* ── Direct navigation to Museum Information Display Page ── */
+  const handleViewMuseumProfile = () => {
+    const target = selectedMuseum || museum || museums[0];
+    if (!target) {
+      toast.error(t.noMuseumAvailable || 'No museum available');
+      return;
+    }
+    const identifier = target.slug || target.id;
+    navigate(`/museums/${identifier}`);
+  };
+
   /* ── MAIN MENU OPTIONS ── */
   const mainMenuOptions = [
+    { label: t.menuMuseumInfo,      step: STEP.VIEW_MUSEUM_PROFILE },
     { label: t.menuViewPrices,      step: STEP.VIEW_PRICES },
     { label: t.menuTimings,         step: STEP.VIEW_TIMINGS },
     { label: t.menuContact,         step: STEP.VIEW_CONTACT },
@@ -268,6 +257,20 @@ const MuseumChatbot = () => {
 
   const handleMainMenu = (option) => {
     addUser(option.label);
+
+    if (option.step === STEP.VIEW_MUSEUM_PROFILE) {
+      const target = selectedMuseum || museum || museums[0];
+      if (!target) {
+        addBot(t.noMuseumAvailable);
+        return;
+      }
+      addBot(`🏛️ Directing you to the museum information display page for **${target.museumName}**...`);
+      setTimeout(() => {
+        handleViewMuseumProfile();
+      }, 400);
+      return;
+    }
+
     setStep(option.step);
 
     if (option.step === STEP.VIEW_PRICES) {
@@ -568,10 +571,21 @@ const MuseumChatbot = () => {
               <div className="animate-fadeIn">
                 <button
                   onClick={() => {
-                    if (aiSuggestedAction.type === 'BOOK') {
-                      handleMainMenu({ label: t.menuBookTicket, step: STEP.BOOK_SELECT_TICKETS });
-                    } else if (aiSuggestedAction.type === 'SHOWS') {
-                      handleMainMenu({ label: t.menuSpecialShows, step: STEP.VIEW_SHOWS });
+                    const actType = aiSuggestedAction.type;
+                    if (actType === 'BOOK' || actType === 'BOOK_TICKETS') {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuBookTicket, step: STEP.BOOK_SELECT_TICKETS });
+                    } else if (actType === 'SHOWS' || actType === 'VIEW_SHOWS') {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuSpecialShows, step: STEP.VIEW_SHOWS });
+                    } else if (actType === 'VIEW_TIMINGS') {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuTimings, step: STEP.VIEW_TIMINGS });
+                    } else if (actType === 'VIEW_PRICES') {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuViewPrices, step: STEP.VIEW_PRICES });
+                    } else if (actType === 'VIEW_DIRECTIONS' || actType === 'VIEW_CONTACT' || actType === 'VIEW_ACCESSIBILITY') {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuContact, step: STEP.VIEW_CONTACT });
+                    } else if (actType === 'VIEW_PROFILE' || actType === 'VIEW_INFO' || actType === 'MUSEUM_PROFILE' || actType === 'GALLERY') {
+                      handleViewMuseumProfile();
+                    } else {
+                      handleMainMenu({ label: aiSuggestedAction.label || t.menuBookTicket, step: STEP.BOOK_SELECT_TICKETS });
                     }
                   }}
                   className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2">
@@ -618,15 +632,22 @@ const MuseumChatbot = () => {
       case STEP.VIEW_CONTACT:
       case STEP.VIEW_SHOWS:
         return (
-          <div className="p-4 flex gap-2">
-            <button onClick={() => setStep(STEP.MAIN_MENU)}
-              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5">
-              <ArrowLeft className="h-4 w-4" /> {t.backToMenu}
+          <div className="p-3.5 space-y-2 bg-gray-50">
+            <button
+              onClick={handleViewMuseumProfile}
+              className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs">
+              <Landmark className="h-4 w-4" /> {t.viewFullMuseumPage}
             </button>
-            <button onClick={() => handleMainMenu({ label: t.menuBookTicket, step: STEP.BOOK_SELECT_TICKETS })}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
-              {t.menuBookTicket}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setStep(STEP.MAIN_MENU)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                <ArrowLeft className="h-4 w-4" /> {t.backToMenu}
+              </button>
+              <button onClick={() => handleMainMenu({ label: t.menuBookTicket, step: STEP.BOOK_SELECT_TICKETS })}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-bold transition-all shadow-md">
+                {t.menuBookTicket}
+              </button>
+            </div>
           </div>
         );
 
@@ -955,15 +976,18 @@ const MuseumChatbot = () => {
         <div className="bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col"
           style={{ height: 'calc(100vh - 100px)', maxHeight: '780px' }}>
 
-          {/* ── Header with Language Switcher ── */}
+          {/* ── Header with Language Switcher & Direct Profile Link ── */}
           <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 px-4 py-3.5 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="bg-white/20 p-2 rounded-full flex-shrink-0">
                 <Bot className="h-5 w-5 text-white" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-white font-bold text-sm sm:text-base leading-tight truncate">
-                  {museum?.museumName || 'Museum Assistant'}
+                <h1
+                  onClick={handleViewMuseumProfile}
+                  className="text-white font-bold text-sm sm:text-base leading-tight truncate cursor-pointer hover:underline"
+                  title="Click to view full museum information display page">
+                  {museum?.museumName || selectedMuseum?.museumName || 'Museum Assistant'}
                 </h1>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
@@ -972,8 +996,16 @@ const MuseumChatbot = () => {
               </div>
             </div>
 
-            {/* Right Controls: Language Selector & History */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Right Controls: Museum Info Profile Link, Language Selector & History */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Direct Link to Main Museum Profile Page */}
+              <button
+                onClick={handleViewMuseumProfile}
+                className="bg-white/20 hover:bg-white/30 transition-colors p-2 rounded-full text-white"
+                title={t.viewFullMuseumPage || 'View Museum Profile'}>
+                <Landmark className="h-4 w-4" />
+              </button>
+
               {/* Language Switcher Dropdown */}
               <div className="relative">
                 <select

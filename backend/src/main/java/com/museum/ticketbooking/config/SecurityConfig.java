@@ -36,23 +36,26 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
+            .httpBasic(httpBasic -> httpBasic.disable())
+            .formLogin(form -> form.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers(new AntPathRequestMatcher("/api/owner/**")).hasRole("MUSEUM")
                 .requestMatchers(new AntPathRequestMatcher("/api/public/**")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/api/public/ai/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/museums/register")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/museums/login")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/tickets/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/payments/**")).permitAll()
-                .requestMatchers(new AntPathRequestMatcher("/api/museums")).permitAll() // GET all
+                .requestMatchers(new AntPathRequestMatcher("/api/museums/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/shows/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/uploads/**")).permitAll()
                 .anyRequest().permitAll()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable())); // For H2 console
-        
+            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()));
+
         return http.build();
     }
     

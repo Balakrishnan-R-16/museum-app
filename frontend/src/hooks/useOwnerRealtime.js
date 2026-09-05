@@ -17,7 +17,7 @@ export const useOwnerRealtime = (museumId) => {
     
     setConnectionStatus('CONNECTING');
 
-    fetchEventSource(`http://localhost:9090/api/owner/realtime/stream`, {
+    fetchEventSource(`http://localhost:8080/api/owner/realtime/stream`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,

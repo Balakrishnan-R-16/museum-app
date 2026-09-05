@@ -73,8 +73,7 @@ public class ImageUploadService {
             // Copy file to the target location (Replacing existing file with the same name)
             Path targetLocation = this.fileStorageLocation.resolve(newFileName);
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
-            
-            String fileDownloadUri = backendUrl + "/uploads/images/" + newFileName;
+            String fileDownloadUri = "/uploads/images/" + newFileName;
 
             // Save to DB
             MuseumImage image = new MuseumImage();

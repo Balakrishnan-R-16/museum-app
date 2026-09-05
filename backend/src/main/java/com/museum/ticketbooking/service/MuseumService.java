@@ -7,6 +7,7 @@ import com.museum.ticketbooking.repository.MuseumRepository;
 import com.museum.ticketbooking.repository.TicketRepository;
 import com.museum.ticketbooking.repository.ShowRepository;
 import com.museum.ticketbooking.util.JwtUtil;
+import com.museum.ticketbooking.dto.PublicMuseumListDTO;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,17 +24,18 @@ public class MuseumService {
     private final TicketRepository ticketRepository;
     private final ShowRepository showRepository;
     private final PasswordEncoder passwordEncoder;
-
     private final JwtUtil jwtUtil;
+    private final SseService sseService;
 
     public MuseumService(MuseumRepository museumRepository, TicketRepository ticketRepository,
                          ShowRepository showRepository, PasswordEncoder passwordEncoder,
-                         JwtUtil jwtUtil) {
+                         JwtUtil jwtUtil, SseService sseService) {
         this.museumRepository = museumRepository;
         this.ticketRepository = ticketRepository;
         this.showRepository   = showRepository;
         this.passwordEncoder  = passwordEncoder;
         this.jwtUtil          = jwtUtil;
+        this.sseService       = sseService;
     }
 
     /* ── REGISTER ── */
@@ -56,7 +58,21 @@ public class MuseumService {
 
         Museum saved = museumRepository.save(museum);
 
-        return museumRepository.save(saved);
+        // Map and emit SSE event
+        PublicMuseumListDTO dto = new PublicMuseumListDTO();
+        dto.setId(saved.getId());
+        dto.setMuseumName(saved.getMuseumName());
+        dto.setLocation(saved.getLocation());
+        dto.setAdultPrice(saved.getAdultPrice());
+        dto.setChildPrice(saved.getChildPrice());
+        dto.setBookingStatus(saved.getBookingStatus());
+        dto.setAverageRating(0.0);
+        dto.setReviewCount(0L);
+        dto.setAmenities(List.of());
+        
+        sseService.emitGlobalEvent("museum_registered", dto);
+
+        return saved;
     }
 
     /* ── LOGIN ── */
