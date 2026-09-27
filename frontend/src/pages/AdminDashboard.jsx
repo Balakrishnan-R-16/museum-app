@@ -583,7 +583,7 @@ const AdminDashboard = () => {
                 <div className="p-4 bg-white rounded-xl shadow-lg border-4 border-white">
                   <QRCodeCanvas 
                     id="museum-qr-code"
-                    value={`http://localhost:5173/museum/${museumId}`} 
+                    value={`${window.location.origin}/museum/${museumId}`} 
                     size={200}
                     level="H"
                     includeMargin={true}
@@ -593,7 +593,7 @@ const AdminDashboard = () => {
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
                 <p className="text-sm font-bold text-indigo-800 mb-1">📱 When scanned, this QR opens:</p>
                 <code className="text-xs text-indigo-700 bg-white px-3 py-1.5 rounded-lg border border-indigo-100 block font-mono break-all">
-                  http://localhost:5173/museum/{museumId}
+                  {window.location.origin}/museum/{museumId}
                 </code>
                 <p className="text-xs text-indigo-600 mt-2">→ Opens the booking chatbot directly for your museum</p>
               </div>
