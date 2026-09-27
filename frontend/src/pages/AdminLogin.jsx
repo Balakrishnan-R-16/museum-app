@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, Lock, Mail, ArrowRight, Loader, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as api from '../services/api';
+import { useEffect } from 'react';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -30,13 +31,10 @@ const AdminLogin = () => {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
-
     try {
       setLoading(true);
-      // api interceptor returns response.data (the ApiResponse body)
-      // ApiResponse shape: { success, message, data: { token, museumId, museumName, email } }
-      const res  = await api.museumAPI.login(formData);
-      const data = res?.data ?? res;   // handle both wrapped and unwrapped
+      const res = await api.museumAPI.login(formData);
+      const data = res?.data ?? res;
 
       localStorage.setItem('token',      data.token);
       localStorage.setItem('userType',   'MUSEUM');
@@ -46,11 +44,42 @@ const AdminLogin = () => {
       toast.success('Welcome back! 🎉');
       navigate('/admin-dashboard');
     } catch (err) {
-      // error toast already shown by api interceptor
+      // error toast already shown
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+        callback: async (response) => {
+          setLoading(true);
+          try {
+            const res = await api.museumAPI.googleLogin(response.credential);
+            const data = res?.data ?? res;
+            
+            localStorage.setItem('token',      data.token);
+            localStorage.setItem('userType',   'MUSEUM');
+            localStorage.setItem('museumId',   data.museumId);
+            localStorage.setItem('museumName', data.museumName);
+            
+            toast.success('Signed in with Google! 🎉');
+            navigate('/admin-dashboard');
+          } catch (err) {
+            // error toast already shown
+          } finally {
+            setLoading(false);
+          }
+        },
+      });
+      window.google.accounts.id.renderButton(
+        document.getElementById("google-admin-login-button"),
+        { theme: "outline", size: "large", shape: "rectangular", width: "100%", text: "continue_with" }
+      );
+    }
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center px-4 py-12 pt-24">
@@ -135,6 +164,10 @@ const AdminLogin = () => {
               <div className="relative flex justify-center">
                 <span className="px-3 bg-white text-xs text-gray-400">OR</span>
               </div>
+            </div>
+            
+            <div className="flex justify-center mb-6">
+              <div id="google-admin-login-button"></div>
             </div>
 
             <div className="text-center text-sm text-gray-600">

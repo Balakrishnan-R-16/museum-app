@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Building2, MapPin, Mail, Lock, Users, IndianRupee, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -32,26 +32,48 @@ const InputField = ({ icon: Icon, label, name, type = 'text', placeholder, value
 
 const RegisterMuseum = () => {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(() => {
+    const saved = sessionStorage.getItem('registerMuseum_step');
+    return saved ? JSON.parse(saved) : 1;
+  });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    museumName: '',
-    location: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    seatCapacity: '',
-    adultPrice: '',
-    childPrice: ''
+  const [isGoogleAuth, setIsGoogleAuth] = useState(() => {
+    const saved = sessionStorage.getItem('registerMuseum_isGoogleAuth');
+    return saved ? JSON.parse(saved) : false;
   });
+  const [googleToken, setGoogleToken] = useState(() => {
+    const saved = sessionStorage.getItem('registerMuseum_googleToken');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [formData, setFormData] = useState(() => {
+    const saved = sessionStorage.getItem('registerMuseum_formData');
+    return saved ? JSON.parse(saved) : {
+      museumName: '',
+      location: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      seatCapacity: '',
+      adultPrice: '',
+      childPrice: ''
+    };
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('registerMuseum_step', JSON.stringify(currentStep));
+    sessionStorage.setItem('registerMuseum_formData', JSON.stringify(formData));
+    sessionStorage.setItem('registerMuseum_isGoogleAuth', JSON.stringify(isGoogleAuth));
+    sessionStorage.setItem('registerMuseum_googleToken', JSON.stringify(googleToken));
+  }, [currentStep, formData, isGoogleAuth, googleToken]);
   const [errors, setErrors] = useState({});
 
   const steps = [
     { number: 1, title: 'Museum Info', description: 'Basic details' },
-    { number: 2, title: 'Contact', description: 'Email & Password' },
-    { number: 3, title: 'Pricing', description: 'Ticket prices' }
+    { number: 2, title: 'Contact', description: 'Email address' },
+    { number: 3, title: 'Security', description: 'Password' },
+    { number: 4, title: 'Pricing', description: 'Ticket prices' }
   ];
 
   const validateStep = (step) => {
@@ -73,15 +95,18 @@ const RegisterMuseum = () => {
       } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
         newErrors.email = 'Email is invalid';
       }
-      if (!formData.password) {
-        newErrors.password = 'Password is required';
-      } else if (formData.password.length < 6) {
-        newErrors.password = 'Password must be at least 6 characters';
-      }
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = 'Passwords do not match';
-      }
     } else if (step === 3) {
+      if (!isGoogleAuth) {
+        if (!formData.password) {
+          newErrors.password = 'Password is required';
+        } else if (formData.password.length < 8) {
+          newErrors.password = 'Password must be at least 8 characters';
+        }
+        if (formData.password !== formData.confirmPassword) {
+          newErrors.confirmPassword = 'Passwords do not match';
+        }
+      }
+    } else if (step === 4) {
       if (!formData.adultPrice || Number(formData.adultPrice) < 0) {
         newErrors.adultPrice = 'Adult price is required and must be positive';
       }
@@ -122,10 +147,40 @@ const RegisterMuseum = () => {
     setErrors({});
   };
 
+  useEffect(() => {
+    if (currentStep === 2 && window.google?.accounts?.id) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+        callback: (response) => {
+          try {
+            // Simple JWT decode for payload
+            const payload = JSON.parse(atob(response.credential.split('.')[1]));
+            if (payload.email) {
+              setFormData((prev) => ({ ...prev, email: payload.email, password: '', confirmPassword: '' }));
+              setErrors((prev) => ({ ...prev, email: '', password: '', confirmPassword: '' }));
+              setIsGoogleAuth(true);
+              setGoogleToken(response.credential);
+              toast.success('Signed in with Google! Password not required.');
+            }
+          } catch (err) {
+            toast.error('Failed to import from Google');
+          }
+        },
+      });
+      const btnContainer = document.getElementById("google-signup-button");
+      if (btnContainer) {
+        window.google.accounts.id.renderButton(
+          btnContainer,
+          { theme: "outline", size: "large", shape: "rectangular", width: "100%", text: "continue_with" }
+        );
+      }
+    }
+  }, [currentStep, isGoogleAuth]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const stepErrors = validateStep(3);
+    const stepErrors = validateStep(4);
     if (Object.keys(stepErrors).length > 0) {
       setErrors(stepErrors);
       return;
@@ -136,14 +191,25 @@ const RegisterMuseum = () => {
       const registrationData = {
         museumName: formData.museumName,
         email: formData.email,
-        password: formData.password,
+        password: (isGoogleAuth || !formData.password) ? null : formData.password,
         location: formData.location,
         seatCapacity: parseInt(formData.seatCapacity),
         adultTicketPrice: parseFloat(formData.adultPrice),
         childTicketPrice: parseFloat(formData.childPrice)
       };
+      
+      if (isGoogleAuth && googleToken) {
+        registrationData.idToken = googleToken;
+      }
 
       await api.museumAPI.register(registrationData);
+      
+      // Clear session storage on success
+      sessionStorage.removeItem('registerMuseum_step');
+      sessionStorage.removeItem('registerMuseum_formData');
+      sessionStorage.removeItem('registerMuseum_isGoogleAuth');
+      sessionStorage.removeItem('registerMuseum_googleToken');
+      
       toast.success('🎉 Museum registered successfully!');
       navigate('/admin-login');
     } catch (error) {
@@ -211,19 +277,23 @@ const RegisterMuseum = () => {
                 {currentStep === 1
                   ? '🏛️ Museum Information'
                   : currentStep === 2
-                  ? '🔐 Contact Details'
+                  ? '📞 Contact Details'
+                  : currentStep === 3
+                  ? '🔐 Security Setup'
                   : '💰 Pricing Setup'}
               </h1>
               <p className="text-gray-600">
                 {currentStep === 1
                   ? 'Tell us about your museum'
                   : currentStep === 2
-                  ? 'Create your admin account'
+                  ? 'How can we reach you?'
+                  : currentStep === 3
+                  ? 'Create your admin account password'
                   : 'Set your ticket prices'}
               </p>
             </div>
 
-            <form onSubmit={currentStep === 3 ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
+            <form onSubmit={currentStep === 4 ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
               {/* Step 1: Museum Info */}
               {currentStep === 1 && (
                 <div className="space-y-6">
@@ -265,6 +335,18 @@ const RegisterMuseum = () => {
               {/* Step 2: Contact Details */}
               {currentStep === 2 && (
                 <div className="space-y-6">
+                  {/* Google Auto-fill */}
+                  {!isGoogleAuth && (
+                    <div>
+                      <div id="google-signup-button" className="flex justify-center"></div>
+                      <div className="flex items-center gap-3 mt-4 mb-2">
+                        <div className="flex-1 h-px bg-gray-200" />
+                        <span className="text-gray-400 text-xs font-medium">OR ENTER MANUALLY</span>
+                        <div className="flex-1 h-px bg-gray-200" />
+                      </div>
+                    </div>
+                  )}
+                  
                   <InputField
                     icon={Mail}
                     label="Email Address"
@@ -274,91 +356,129 @@ const RegisterMuseum = () => {
                     value={formData.email}
                     error={errors.email}
                     onChange={handleChange}
-                    loading={loading}
+                    loading={loading || isGoogleAuth}
                   />
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-sm font-semibold text-gray-700">Password</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+
+                  {isGoogleAuth && (
+                    <div className="text-right">
+                      <button 
+                        type="button" 
+                        onClick={() => { setIsGoogleAuth(false); setGoogleToken(null); }}
+                        className="text-xs text-primary-600 font-medium hover:underline"
                       >
-                        {showPassword ? 'Hide' : 'Show'}
+                        Use a different email
                       </button>
                     </div>
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-primary-600 transition-colors" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password"
-                        value={formData.password}
-                        onChange={handleChange}
-                        disabled={loading}
-                        className={`input-modern w-full pl-11 pr-12 ${
-                          errors.password ? 'border-danger-500 focus:ring-danger-500' : ''
-                        }`}
-                        placeholder="Min. 6 characters"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600"
-                      >
-                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
-                    </div>
-                    {errors.password && (
-                      <p className="text-danger-600 text-sm flex items-center">
-                        <span className="inline-block w-1 h-1 bg-danger-600 rounded-full mr-2"></span>
-                        {errors.password}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-sm font-semibold text-gray-700">Confirm Password</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-                      >
-                        {showConfirmPassword ? 'Hide' : 'Show'}
-                      </button>
-                    </div>
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-primary-600 transition-colors" />
-                      <input
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        name="confirmPassword"
-                        value={formData.confirmPassword}
-                        onChange={handleChange}
-                        disabled={loading}
-                        className={`input-modern w-full pl-11 pr-12 ${
-                          errors.confirmPassword ? 'border-danger-500 focus:ring-danger-500' : ''
-                        }`}
-                        placeholder="Confirm your password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600"
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
-                    </div>
-                    {errors.confirmPassword && (
-                      <p className="text-danger-600 text-sm flex items-center">
-                        <span className="inline-block w-1 h-1 bg-danger-600 rounded-full mr-2"></span>
-                        {errors.confirmPassword}
-                      </p>
-                    )}
-                  </div>
+                  )}
                 </div>
               )}
 
-              {/* Step 3: Pricing */}
+              {/* Step 3: Security */}
               {currentStep === 3 && (
+                <div className="space-y-6">
+                  {isGoogleAuth ? (
+                    <div className="bg-green-50 text-green-700 p-6 rounded-2xl border border-green-200 text-center">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-4">
+                        <Check className="h-6 w-6 text-green-600" />
+                      </div>
+                      <h3 className="text-lg font-bold mb-2">Password Not Required</h3>
+                      <p className="text-sm">Since you authenticated with Google, you don't need a password right now. A password can be set later in your museum dashboard if you wish.</p>
+                      <button 
+                        type="button" 
+                        onClick={() => { setIsGoogleAuth(false); setGoogleToken(null); }}
+                        className="text-primary-600 font-semibold mt-4 hover:underline text-sm"
+                      >
+                        Set a password manually instead
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-semibold text-gray-700">Password</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                          >
+                            {showPassword ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <div className="relative group">
+                          <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-primary-600 transition-colors" />
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            name="password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            disabled={loading}
+                            className={`input-modern w-full pl-11 pr-12 ${
+                              errors.password ? 'border-danger-500 focus:ring-danger-500' : ''
+                            }`}
+                            placeholder="Min. 8 characters"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600"
+                          >
+                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                          </button>
+                        </div>
+                        {errors.password && (
+                          <p className="text-danger-600 text-sm flex items-center">
+                            <span className="inline-block w-1 h-1 bg-danger-600 rounded-full mr-2"></span>
+                            {errors.password}
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-semibold text-gray-700">Confirm Password</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                          >
+                            {showConfirmPassword ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <div className="relative group">
+                          <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-primary-600 transition-colors" />
+                          <input
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            name="confirmPassword"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            disabled={loading}
+                            className={`input-modern w-full pl-11 pr-12 ${
+                              errors.confirmPassword ? 'border-danger-500 focus:ring-danger-500' : ''
+                            }`}
+                            placeholder="Confirm your password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600"
+                          >
+                            {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                          </button>
+                        </div>
+                        {errors.confirmPassword && (
+                          <p className="text-danger-600 text-sm flex items-center">
+                            <span className="inline-block w-1 h-1 bg-danger-600 rounded-full mr-2"></span>
+                            {errors.confirmPassword}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: Pricing */}
+              {currentStep === 4 && (
                 <div className="space-y-6">
                   <InputField
                     icon={IndianRupee}
@@ -414,7 +534,7 @@ const RegisterMuseum = () => {
                     <span>Previous</span>
                   </button>
                 )}
-                {currentStep < 3 && (
+                {currentStep < 4 && (
                   <button
                     type="button"
                     onClick={handleNext}
@@ -425,7 +545,7 @@ const RegisterMuseum = () => {
                     <ChevronRight className="h-5 w-5" />
                   </button>
                 )}
-                {currentStep === 3 && (
+                {currentStep === 4 && (
                   <button
                     type="submit"
                     disabled={loading}
@@ -436,17 +556,6 @@ const RegisterMuseum = () => {
                 )}
               </div>
             </form>
-
-            {/* Login Link */}
-            <p className="text-center text-gray-600 text-sm mt-6">
-              Already have an account?{' '}
-              <button
-                onClick={() => navigate('/admin-login')}
-                className="text-primary-600 hover:text-primary-700 font-semibold transition-colors"
-              >
-                Login here
-              </button>
-            </p>
           </div>
         </div>
 

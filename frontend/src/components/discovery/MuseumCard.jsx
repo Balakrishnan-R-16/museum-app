@@ -30,6 +30,12 @@ const MuseumCard = ({ museum }) => {
               {museum.category}
             </span>
           )}
+          {museum.distance != null && (
+            <span className="px-4 py-1.5 bg-indigo-500/80 backdrop-blur-md border border-indigo-300/30 text-xs font-semibold text-white tracking-wide rounded-full shadow-lg flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              {museum.distance.toFixed(1)} km
+            </span>
+          )}
         </div>
         
         {/* Bottom Info overlay (Inside Image) */}

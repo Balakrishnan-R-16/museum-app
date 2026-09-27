@@ -1,10 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Link } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import RatingStars from '../common/RatingStars';
 import { IndianRupee } from 'lucide-react';
+
+const userIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 // Fix Leaflet's default icon path issues in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -14,28 +23,56 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Component to handle auto-fitting bounds when museums change
-const MapBounds = ({ museums }) => {
+// Component to handle auto-fitting bounds when museums or user location change
+const MapBounds = ({ museums, userLocation }) => {
   const map = useMap();
   
   useEffect(() => {
-    if (!museums || museums.length === 0) return;
+    const points = [];
+    if (museums && museums.length > 0) {
+      museums.forEach(m => {
+        if (m.latitude && m.longitude) {
+          points.push([m.latitude, m.longitude]);
+        }
+      });
+    }
+    if (userLocation) {
+      points.push([userLocation.lat, userLocation.lng]);
+    }
+
+    if (points.length === 0) return;
+
+    const bounds = L.latLngBounds(points);
     
-    const bounds = L.latLngBounds(
-      museums.map(m => [m.latitude || 20.5937, m.longitude || 78.9629])
-    );
-    
-    if (museums.length === 1) {
-      map.setView(bounds.getCenter(), 14);
+    if (points.length === 1) {
+      map.setView(bounds.getCenter(), 12);
     } else {
       map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [museums, map]);
+  }, [museums, userLocation, map]);
 
   return null;
 };
 
 const MapView = ({ museums, height = '600px' }) => {
+  const [userLocation, setUserLocation] = useState(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.warn("User location not available:", error.message);
+        }
+      );
+    }
+  }, []);
+
   // Default center (India)
   const defaultCenter = [20.5937, 78.9629];
   const defaultZoom = 5;
@@ -50,7 +87,7 @@ const MapView = ({ museums, height = '600px' }) => {
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
         {museums.filter(m => m.latitude && m.longitude).map((museum) => (
@@ -85,8 +122,15 @@ const MapView = ({ museums, height = '600px' }) => {
             </Popup>
           </Marker>
         ))}
+        {userLocation && (
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
+            <Popup className="rounded-xl overflow-hidden font-bold text-center">
+              You are here
+            </Popup>
+          </Marker>
+        )}
         
-        <MapBounds museums={museums.filter(m => m.latitude && m.longitude)} />
+        <MapBounds museums={museums.filter(m => m.latitude && m.longitude)} userLocation={userLocation} />
       </MapContainer>
     </div>
   );

@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Bot, History, X, CheckCircle, Clock, CreditCard,
+  Bot, X, CheckCircle, Clock, CreditCard,
   ChevronRight, Ticket, ArrowLeft, Eye, EyeOff, Globe,
-  Send, Sparkles, ExternalLink, Landmark, Info
+  Send, Sparkles, ExternalLink, Landmark, Info, User, LogIn
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as api from '../services/api';
 import { loadRazorpayScript } from '../utils/loadRazorpay';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { LANGUAGES, getTranslation } from '../utils/translations';
+import { useVisitorAuth } from '../context/VisitorAuthContext';
 
 /* ──────────────────────────────────────────────
    STEP CONSTANTS  (button-driven flow)
@@ -21,14 +22,12 @@ const STEP = {
   VIEW_CONTACT: 'VIEW_CONTACT',
   VIEW_SHOWS: 'VIEW_SHOWS',
   BOOK_SELECT_TICKETS: 'BOOK_SELECT_TICKETS',
+  BOOK_DATE: 'BOOK_DATE',
+  BOOK_SLOT: 'BOOK_SLOT',
   BOOK_EMAIL: 'BOOK_EMAIL',
-  BOOK_PHONE: 'BOOK_PHONE',
   BOOK_CONFIRM: 'BOOK_CONFIRM',
   PAYMENT: 'PAYMENT',
   SUCCESS: 'SUCCESS',
-  HISTORY_EMAIL: 'HISTORY_EMAIL',
-  HISTORY_LIST: 'HISTORY_LIST',
-  TICKET_VALIDATE: 'TICKET_VALIDATE',
   ASK_AI: 'ASK_AI',
 };
 
@@ -45,6 +44,7 @@ const fmtTime  = (d) => new Date(d).toLocaleTimeString('en-IN', { hour:'2-digit'
 const MuseumChatbot = () => {
   const { id: paramId } = useParams();
   const navigate = useNavigate();
+  const { visitor, isAuthenticated: visitorLoggedIn, googleAuth } = useVisitorAuth();
 
   /* Language state (persisted) */
   const [lang, setLang] = useState(() => localStorage.getItem('chatbot_lang') || 'en');
@@ -64,7 +64,7 @@ const MuseumChatbot = () => {
   const [textInput, setTextInput] = useState('');
 
   /* Booking form state */
-  const [booking, setBooking] = useState({ adults: 1, children: 0, email: '', phone: '' });
+  const [booking, setBooking] = useState({ adults: 1, children: 0, email: '', date: '', slotStart: '', slotEnd: '' });
   const [totalPrice, setTotalPrice] = useState(0);
 
   /* Payment state */
@@ -72,16 +72,7 @@ const MuseumChatbot = () => {
   const [bookingResult,  setBookingResult]  = useState(null);
   const [loading,        setLoading]        = useState(false);
 
-  /* History */
-  const [showHistory,     setShowHistory]   = useState(false);
-  const [historyEmail,    setHistoryEmail]  = useState('');
-  const [userTickets,     setUserTickets]   = useState([]);
-  const [loadingHistory,  setLoadingHistory]= useState(false);
-
-  /* Ticket validation */
-  const [validatingTicket, setValidatingTicket] = useState(null);
-  const [validCode,         setValidCode]        = useState('');
-  const [showCode,          setShowCode]         = useState(false);
+  /* History panel removed — visitors use /visitor/tickets instead */
 
   /* AI Guide state */
   const [aiLoading,         setAiLoading]        = useState(false);
@@ -91,6 +82,51 @@ const MuseumChatbot = () => {
   const messagesEndRef = useRef(null);
 
   /* ── scroll ── */
+  // Initialize Google Sign-In button when on BOOK_EMAIL step
+  useEffect(() => {
+    if (step === STEP.BOOK_EMAIL && !visitorLoggedIn && window.google?.accounts?.id) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+        callback: async (response) => {
+          try {
+            await googleAuth(response.credential);
+            toast.success('Signed in with Google!');
+            // After login, `visitorLoggedIn` becomes true, which will trigger another useEffect
+            // to advance to the next step (BOOK_CONFIRM), or we can handle it here:
+            // But wait, visitorLoggedIn will change and trigger a re-render.
+          } catch (err) {
+            toast.error(err?.message || 'Google sign-in failed');
+          }
+        },
+      });
+      window.google.accounts.id.renderButton(
+        document.getElementById("chatbot-google-signin"),
+        { theme: "outline", size: "large", shape: "rectangular", width: "100%" }
+      );
+    }
+  }, [step, visitorLoggedIn, googleAuth]);
+
+  useEffect(() => {
+    // If visitor logs in while on BOOK_EMAIL step, advance to confirmation
+    if (visitorLoggedIn && step === STEP.BOOK_EMAIL && visitor?.email) {
+      setBooking(p => ({ ...p, email: visitor.email }));
+      const adult = Number(selectedMuseum?.adultPrice || selectedMuseum?.adultTicketPrice || 0);
+      const child = Number(selectedMuseum?.childPrice || selectedMuseum?.childTicketPrice || 0);
+      const total = booking.adults * adult + booking.children * child;
+      addBot(
+        `**${t.bookingDetailsTitle}**\n\n` +
+        `🏛️ ${t.museumLabel}: ${selectedMuseum.museumName}\n` +
+        `👤 ${booking.adults} ${t.adults} + ${booking.children} ${t.children}\n` +
+        `📅 Date: ${booking.date || 'Today'}\n` +
+        (booking.slotStart ? `🕐 Slot: ${booking.slotStart} - ${booking.slotEnd}\n` : '') +
+        `📧 ${t.contactEmail}: ${visitor.email}\n` +
+        `💰 ${t.totalPayable}: ${fmtPrice(total)}\n\n` +
+        `${t.pleaseConfirmDetails}`
+      );
+      setStep(STEP.BOOK_CONFIRM);
+    }
+  }, [visitorLoggedIn, step, visitor, selectedMuseum, booking, t, fmtPrice]);
+
   useEffect(() => {
     const timeout = setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -379,10 +415,40 @@ const MuseumChatbot = () => {
       `👦 ${booking.children} ${t.children} × ${fmtPrice(child)} = ${fmtPrice(booking.children * child)}\n` +
       `─────────────────\n` +
       `💰 **${t.totalPayable}: ${fmtPrice(total)}**\n\n` +
-      `${t.enterEmailPrompt}`
+      `Please select a date for your visit:`
     );
     setTotalPrice(total);
-    setStep(STEP.BOOK_EMAIL);
+    setStep(STEP.BOOK_DATE);
+  };
+
+  const handleDateSubmit = (date) => {
+    setBooking(p => ({ ...p, date }));
+    addUser(`Date: ${date}`);
+    addBot(`Great! Now select a time slot for your visit:`);
+    setStep(STEP.BOOK_SLOT);
+  };
+
+  const handleSlotSubmit = (slotStart, slotEnd) => {
+    setBooking(p => ({ ...p, slotStart, slotEnd }));
+    addUser(`Time Slot: ${slotStart} - ${slotEnd}`);
+
+    if (visitorLoggedIn && visitor?.email) {
+      setBooking(p => ({ ...p, email: visitor.email }));
+      addBot(
+        `**${t.bookingDetailsTitle}**\n\n` +
+        `🏛️ ${t.museumLabel}: ${selectedMuseum.museumName}\n` +
+        `👤 ${booking.adults} ${t.adults} + ${booking.children} ${t.children}\n` +
+        `📅 Date: ${booking.date}\n` +
+        `🕐 Slot: ${slotStart} - ${slotEnd}\n` +
+        `📧 ${t.contactEmail}: ${visitor.email}\n` +
+        `💰 ${t.totalPayable}: ${fmtPrice(totalPrice)}\n\n` +
+        `${t.pleaseConfirmDetails}`
+      );
+      setStep(STEP.BOOK_CONFIRM);
+    } else {
+      addBot(t.enterEmailPrompt);
+      setStep(STEP.BOOK_EMAIL);
+    }
   };
 
   const handleEmailSubmit = () => {
@@ -391,23 +457,14 @@ const MuseumChatbot = () => {
     setBooking(p => ({ ...p, email }));
     setTextInput('');
     addUser(email);
-    addBot(`${t.enterPhonePrompt}`);
-    setStep(STEP.BOOK_PHONE);
-  };
-
-  const handlePhoneSubmit = () => {
-    const phone = textInput.trim();
-    if (!phone || phone.length < 6) { toast.error('Enter a valid phone number'); return; }
-    setBooking(p => ({ ...p, phone }));
-    setTextInput('');
-    addUser(phone);
 
     addBot(
       `**${t.bookingDetailsTitle}**\n\n` +
       `🏛️ ${t.museumLabel}: ${selectedMuseum.museumName}\n` +
       `👤 ${booking.adults} ${t.adults} + ${booking.children} ${t.children}\n` +
-      `📧 ${t.contactEmail}: ${booking.email}\n` +
-      `📞 ${t.contactPhone}: ${phone}\n` +
+      `📅 Date: ${booking.date}\n` +
+      `🕐 Slot: ${booking.slotStart} - ${booking.slotEnd}\n` +
+      `📧 ${t.contactEmail}: ${email}\n` +
       `💰 ${t.totalPayable}: ${fmtPrice(totalPrice)}\n\n` +
       `${t.pleaseConfirmDetails}`
     );
@@ -420,9 +477,12 @@ const MuseumChatbot = () => {
       const ticketRes = await api.ticketAPI.book({
         museumId: selectedMuseum.id,
         email: booking.email,
-        phone: booking.phone,
         adults: booking.adults,
         children: booking.children,
+        visitorId: visitorLoggedIn ? visitor?.id : undefined,
+        bookedDate: booking.date ? booking.date : undefined,
+        slotStart: booking.slotStart || undefined,
+        slotEnd: booking.slotEnd || undefined,
       });
       const ticket = ticketRes.data || ticketRes;
       setBookingResult(ticket);
@@ -480,7 +540,7 @@ const MuseumChatbot = () => {
             toast.error('Payment verification failed. Contact support.');
           }
         },
-        prefill: { email: booking.email, contact: booking.phone },
+        prefill: { email: booking.email },
         theme: { color: '#6366f1' },
       };
       const rzp = new window.Razorpay(options);
@@ -490,48 +550,12 @@ const MuseumChatbot = () => {
     }
   };
 
-  /* ── HISTORY ── */
-  const handleFetchHistory = async () => {
-    if (!historyEmail.trim() || !historyEmail.includes('@')) {
-      toast.error('Enter a valid email'); return;
-    }
-    setLoadingHistory(true);
-    try {
-      const res = await api.ticketAPI.getUserTickets(historyEmail.trim());
-      setUserTickets(res.data || res || []);
-    } catch {
-      toast.error('Failed to fetch tickets');
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  const handleValidateTicket = async () => {
-    if (!validCode || validCode.length !== 4) { toast.error('Enter 4-digit code'); return; }
-    setLoading(true);
-    try {
-      await api.ticketAPI.verify({
-        ticketId: validatingTicket.id,
-        verificationCode: validCode,
-        museumId: validatingTicket.museumId,
-      });
-      toast.success('Ticket validated! ✅');
-      setUserTickets(p => p.map(t =>
-        t.id === validatingTicket.id ? { ...t, status: 'USED' } : t
-      ));
-      setValidatingTicket(null);
-      setValidCode('');
-    } catch {
-      toast.error('Invalid code. Please check and retry.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  /* ── HISTORY — removed. Visitors use /visitor/tickets page instead ── */
 
   /* ── RESET ── */
   const resetToMenu = () => {
     setStep(STEP.MAIN_MENU);
-    setBooking({ adults: 1, children: 0, email: '', phone: '' });
+    setBooking({ adults: 1, children: 0, email: '' });
     setOrderData(null);
     setBookingResult(null);
     setAiSuggestedAction(null);
@@ -559,7 +583,6 @@ const MuseumChatbot = () => {
 
   /* ── BOTTOM ACTION AREA ── */
   const renderActions = () => {
-    if (showHistory) return null;
 
     switch (step) {
       case STEP.MAIN_MENU:
@@ -704,33 +727,94 @@ const MuseumChatbot = () => {
           </div>
         );
 
-      case STEP.BOOK_EMAIL:
+      case STEP.BOOK_DATE:
         return (
-          <div className="p-4 space-y-2">
-            <input type="email" value={textInput}
-              onChange={e => setTextInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleEmailSubmit()}
-              placeholder={t.emailPlaceholder}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-xs" />
-            <button onClick={handleEmailSubmit}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
-              {t.continueBtn}
-            </button>
+          <div className="p-4 space-y-4">
+            <div>
+              <p className="text-sm font-bold text-gray-900 mb-2">Select Date of Visit</p>
+              <input type="date"
+                min={new Date().toISOString().split('T')[0]}
+                value={booking.date || ''}
+                onChange={e => setBooking(p => ({ ...p, date: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setStep(STEP.BOOK_SELECT_TICKETS)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl text-xs font-bold transition-all">
+                ← {t.back}
+              </button>
+              <button onClick={() => handleDateSubmit(booking.date)}
+                disabled={!booking.date}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
+                {t.continueBtn}
+              </button>
+            </div>
           </div>
         );
 
-      case STEP.BOOK_PHONE:
+      case STEP.BOOK_SLOT: {
+        // Generate time slots from museum opening to closing
+        const openStr = selectedMuseum?.openingTime || '09:00';
+        const closeStr = selectedMuseum?.closingTime || '17:00';
+        const openHour = parseInt(openStr.split(':')[0], 10);
+        const closeHour = parseInt(closeStr.split(':')[0], 10);
+        const slots = [];
+        for (let h = openHour; h < closeHour; h += 2) {
+          const start = `${String(h).padStart(2, '0')}:00`;
+          const endHour = Math.min(h + 2, closeHour);
+          const end = `${String(endHour).padStart(2, '0')}:00`;
+          slots.push({ start, end, label: `${start} - ${end}` });
+        }
+        const selectedSlot = booking.slotStart ? `${booking.slotStart}-${booking.slotEnd}` : '';
+
         return (
-          <div className="p-4 space-y-2">
-            <input type="tel" value={textInput}
-              onChange={e => setTextInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handlePhoneSubmit()}
-              placeholder={t.phonePlaceholder}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-xs" />
-            <button onClick={handlePhoneSubmit}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
-              {t.continueBtn}
-            </button>
+          <div className="p-4 space-y-4">
+            <p className="text-sm font-bold text-gray-900 mb-1">Select Time Slot</p>
+            <p className="text-xs text-gray-500 mb-2">Choose your preferred 2-hour visit window</p>
+            <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto pr-1">
+              {slots.map(s => {
+                const key = `${s.start}-${s.end}`;
+                const isSelected = selectedSlot === key;
+                return (
+                  <button key={key}
+                    onClick={() => setBooking(p => ({ ...p, slotStart: s.start, slotEnd: s.end }))}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-2 flex items-center justify-center gap-1.5
+                      ${isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50'}`}>
+                    <Clock className="h-3.5 w-3.5" />
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setStep(STEP.BOOK_DATE)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl text-xs font-bold transition-all">
+                ← {t.back}
+              </button>
+              <button onClick={() => handleSlotSubmit(booking.slotStart, booking.slotEnd)}
+                disabled={!booking.slotStart}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
+                {t.continueBtn}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      case STEP.BOOK_EMAIL:
+        return (
+          <div className="p-4 space-y-4">
+            {!visitorLoggedIn && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4 text-center shadow-sm">
+                <p className="text-sm text-gray-700 mb-3 font-medium">Continue with Google to book your ticket instantly</p>
+                <div className="flex justify-center mb-2">
+                  <div id="chatbot-google-signin"></div>
+                </div>
+              </div>
+            )}
           </div>
         );
 
@@ -771,16 +855,17 @@ const MuseumChatbot = () => {
                   <span className="text-gray-500">{t.contactEmail}:</span>
                   <span className="font-medium text-gray-800 truncate max-w-[180px]">{booking.email}</span>
                 </div>
-                {booking.phone && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">{t.contactPhone}:</span>
-                    <span className="font-medium text-gray-800">{booking.phone}</span>
-                  </div>
-                )}
+
                 <div className="flex justify-between">
                   <span className="text-gray-500">{t.visitDate}:</span>
-                  <span className="font-medium text-gray-800">{t.today} ({fmtDate(new Date())})</span>
+                  <span className="font-medium text-gray-800">{booking.date ? fmtDate(new Date(booking.date + 'T00:00:00')) : `${t.today} (${fmtDate(new Date())})`}</span>
                 </div>
+                {booking.slotStart && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Time Slot:</span>
+                    <span className="font-medium text-gray-800">{booking.slotStart} - {booking.slotEnd}</span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-indigo-100 pt-2 flex justify-between items-center text-xs">
@@ -829,10 +914,17 @@ const MuseumChatbot = () => {
       case STEP.SUCCESS:
         return (
           <div className="p-4 grid grid-cols-2 gap-2">
-            <button onClick={() => { setShowHistory(true); setHistoryEmail(booking.email); }}
-              className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-3 rounded-xl text-xs font-bold transition-all">
-              {t.viewTicketBtn}
-            </button>
+            {visitorLoggedIn && bookingResult?.id ? (
+              <Link to={`/visitor/tickets/${bookingResult.id}`}
+                className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-3 rounded-xl text-xs font-bold transition-all text-center">
+                {t.viewTicketBtn}
+              </Link>
+            ) : (
+              <Link to="/visitor/login"
+                className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-3 rounded-xl text-xs font-bold transition-all text-center">
+                Sign In to View
+              </Link>
+            )}
             <button onClick={resetToMenu}
               className="bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
               {t.mainMenuBtn}
@@ -845,120 +937,7 @@ const MuseumChatbot = () => {
     }
   };
 
-  /* ──────────────────────────────────────────────
-     HISTORY PANEL
-  ────────────────────────────────────────────── */
-  const renderHistoryPanel = () => (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h3 className="font-bold text-gray-900 text-base flex items-center gap-2">
-          <Ticket className="h-4 w-4 text-indigo-600" />
-          {t.myTicketsTitle}
-        </h3>
-        <button onClick={() => { setShowHistory(false); setValidatingTicket(null); setValidCode(''); }}
-          className="text-gray-400 hover:text-gray-600 transition-colors">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Validating a ticket */}
-      {validatingTicket && (
-        <div className="flex-1 overflow-y-auto p-5">
-          <button onClick={() => { setValidatingTicket(null); setValidCode(''); }}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeft className="h-4 w-4" /> {t.back}
-          </button>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-4">
-            <p className="font-bold text-indigo-900">#{validatingTicket.ticketNumber}</p>
-            <p className="text-xs text-indigo-700 mt-1">{validatingTicket.userEmail}</p>
-            <p className="text-xs text-indigo-600 mt-1">{validatingTicket.adults}A / {validatingTicket.children}C · {fmtPrice(validatingTicket.totalPrice)}</p>
-          </div>
-          <p className="text-xs text-gray-600 mb-2 font-medium">{t.enterMuseumCodePrompt}</p>
-          <div className="relative mb-3">
-            <input
-              type={showCode ? 'text' : 'password'}
-              maxLength={4}
-              value={validCode}
-              onChange={e => setValidCode(e.target.value.replace(/\D/g, ''))}
-              className="w-full px-4 py-4 border-2 border-indigo-300 rounded-xl text-center text-3xl font-mono tracking-[0.5em] focus:border-indigo-600 focus:outline-none"
-              placeholder="••••"
-              autoFocus
-            />
-            <button onClick={() => setShowCode(p => !p)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              {showCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <button onClick={handleValidateTicket} disabled={validCode.length !== 4 || loading}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md">
-            {loading ? t.verifyingTicket : t.validateTicketBtn}
-          </button>
-          <p className="text-[11px] text-gray-400 text-center mt-2">{t.staffCodeHint}</p>
-        </div>
-      )}
-
-      {/* Email input */}
-      {!validatingTicket && userTickets.length === 0 && (
-        <div className="flex-1 flex flex-col p-5">
-          <p className="text-xs text-gray-600 mb-3">{t.enterEmailToView}</p>
-          <input type="email" value={historyEmail}
-            onChange={e => setHistoryEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleFetchHistory()}
-            placeholder={t.enterEmailPlaceholder}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 text-xs mb-3" />
-          <button onClick={handleFetchHistory} disabled={loadingHistory}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold text-xs transition-all shadow-md">
-            {loadingHistory ? 'Loading…' : t.viewTicketsBtn}
-          </button>
-        </div>
-      )}
-
-      {/* Ticket list */}
-      {!validatingTicket && userTickets.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-gray-500">{userTickets.length} {t.ticketCountFor} {historyEmail}</p>
-            <button onClick={() => { setUserTickets([]); setHistoryEmail(''); }}
-              className="text-xs text-indigo-600 hover:underline">{t.changeEmailBtn}</button>
-          </div>
-          {userTickets.map(ticket => (
-            <div key={ticket.id}
-              className="bg-white border border-gray-200 rounded-xl p-4 shadow-xs hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                  #{ticket.ticketNumber}
-                </span>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                  ticket.status === 'ACTIVE'    ? 'bg-green-100 text-green-800' :
-                  ticket.status === 'USED'      ? 'bg-gray-100 text-gray-600' :
-                  ticket.status === 'PENDING'   ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-red-100 text-red-800'}`}>
-                  {ticket.status}
-                </span>
-              </div>
-              <p className="text-xs text-gray-700 font-bold">{ticket.museumName || 'Museum'}</p>
-              <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
-                <span>{ticket.adults}A / {ticket.children}C</span>
-                <span className="font-semibold text-gray-700">{fmtPrice(ticket.totalPrice)}</span>
-                <span>{fmtDate(ticket.createdAt)}</span>
-              </div>
-              {ticket.status === 'ACTIVE' && (
-                <button onClick={() => { setValidatingTicket(ticket); setValidCode(''); }}
-                  className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-xs font-semibold transition-all">
-                  🔐 Enter Museum Code
-                </button>
-              )}
-              {ticket.status === 'USED' && (
-                <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
-                  <CheckCircle className="h-3 w-3" /> {t.usedOn} {ticket.usedAt ? fmtDate(ticket.usedAt) : '—'}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  /* ── History panel removed. Visitors use /visitor/tickets page instead ── */
 
   /* ──────────────────────────────────────────────
      MAIN RENDER
@@ -996,7 +975,7 @@ const MuseumChatbot = () => {
               </div>
             </div>
 
-            {/* Right Controls: Museum Info Profile Link, Language Selector & History */}
+            {/* Right Controls: Museum Info, Language Selector & Account */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Direct Link to Main Museum Profile Page */}
               <button
@@ -1022,13 +1001,20 @@ const MuseumChatbot = () => {
                 <Globe className="h-3 w-3 text-white/70 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
-              {/* View Tickets History */}
-              <button
-                onClick={() => { setShowHistory(true); }}
-                className="bg-white/20 hover:bg-white/30 transition-colors p-2 rounded-full text-white"
-                title={t.viewMyTickets}>
-                <History className="h-4 w-4" />
-              </button>
+              {/* Account / My Tickets */}
+              {visitorLoggedIn ? (
+                <Link to="/visitor/tickets"
+                  className="bg-white/20 hover:bg-white/30 transition-colors p-2 rounded-full text-white"
+                  title="My Tickets">
+                  <Ticket className="h-4 w-4" />
+                </Link>
+              ) : (
+                <Link to="/visitor/login"
+                  className="bg-white/20 hover:bg-white/30 transition-colors p-2 rounded-full text-white"
+                  title="Sign In">
+                  <User className="h-4 w-4" />
+                </Link>
+              )}
             </div>
           </div>
 
@@ -1036,7 +1022,7 @@ const MuseumChatbot = () => {
           <div className="flex-1 overflow-hidden relative">
 
             {/* CHAT AREA */}
-            <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ${showHistory ? '-translate-x-full' : 'translate-x-0'}`}>
+            <div className="absolute inset-0 flex flex-col">
               {/* Messages Container */}
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                 {messages.length === 0 && (
@@ -1090,18 +1076,13 @@ const MuseumChatbot = () => {
               </div>
             </div>
 
-            {/* HISTORY PANEL */}
-            <div className={`absolute inset-0 bg-white flex flex-col transition-transform duration-300 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
-              {renderHistoryPanel()}
-            </div>
-
           </div>
         </div>
 
         {/* Bottom hint */}
         <p className="text-center text-white/50 text-xs mt-3 flex items-center justify-center gap-1">
-          <span>🌐 Switch language anytime from the top bar</span> · 
-          <span>Tap <History className="inline h-3 w-3" /> for ticket history</span>
+          <span>🌐 Switch language anytime from the top bar</span>
+          {visitorLoggedIn && <span> · <Link to="/visitor/tickets" className="text-indigo-300 hover:text-indigo-200">View My Tickets</Link></span>}
         </p>
       </div>
     </div>

@@ -6,7 +6,6 @@ import toast from 'react-hot-toast';
 const ReviewComposer = ({ museumId, onSuccess, onCancel }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    ticketId: '',
     visitorEmail: '',
     visitorName: '',
     rating: 0,
@@ -23,17 +22,15 @@ const ReviewComposer = ({ museumId, onSuccess, onCancel }) => {
       return;
     }
     
-    if (!formData.ticketId || !formData.visitorEmail) {
-      toast.error('Ticket ID and Email are required to verify your visit');
+    if (!formData.visitorEmail) {
+      toast.error('Email is required');
       return;
     }
 
     setLoading(true);
     try {
-      // The backend expects ticketId as a Number, not string
       const payload = {
-        ...formData,
-        ticketId: Number(formData.ticketId)
+        ...formData
       };
       
       await publicAPI.submitReview(museumId, payload);
@@ -55,7 +52,7 @@ const ReviewComposer = ({ museumId, onSuccess, onCancel }) => {
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mt-6 mb-8">
       <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100">
         <h3 className="text-lg font-bold text-indigo-900">Write a Review</h3>
-        <p className="text-indigo-700 text-sm">Share your experience with other visitors. (Requires a valid used ticket)</p>
+        <p className="text-indigo-700 text-sm">Share your experience with other visitors.</p>
       </div>
       
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -89,20 +86,7 @@ const ReviewComposer = ({ museumId, onSuccess, onCancel }) => {
           {/* Verification Info */}
           <div className="space-y-4">
             <h4 className="font-semibold text-gray-900 border-b pb-2">Verification</h4>
-            <div>
-              <label htmlFor="ticketId" className="block text-sm font-medium text-gray-700 mb-1">Ticket Number / ID *</label>
-              <input
-                type="text"
-                id="ticketId"
-                name="ticketId"
-                required
-                value={formData.ticketId}
-                onChange={handleChange}
-                placeholder="e.g. 1042"
-                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
-              />
-            </div>
-            
+
             <div>
               <label htmlFor="visitorEmail" className="block text-sm font-medium text-gray-700 mb-1">Booking Email *</label>
               <input

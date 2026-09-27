@@ -37,7 +37,11 @@ const AdminDashboard = () => {
     toast.success(`Language: ${LANGUAGES.find(l => l.code === newLang)?.native || newLang}`);
   };
 
-  const [activeTab, setActiveTab]   = useState('overview');
+  const [activeTab, setActiveTab]   = useState(() => localStorage.getItem('admin_active_tab') || 'overview');
+
+  useEffect(() => {
+    localStorage.setItem('admin_active_tab', activeTab);
+  }, [activeTab]);
   const [loading,   setLoading]     = useState(true);
   const [stats,     setStats]       = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState('30d');
@@ -61,6 +65,7 @@ const AdminDashboard = () => {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [selectedTicket,  setSelectedTicket]  = useState(null);
   const [verifyCode,      setVerifyCode]      = useState('');
+  const [entryCount,      setEntryCount]      = useState(1);
   const [showVerifyPin,   setShowVerifyPin]   = useState(false);
 
   useEffect(() => {
@@ -187,27 +192,31 @@ const AdminDashboard = () => {
     catch { toast.error('Failed'); }
   };
 
-  const handlePhoneSearch = async (phone) => {
-    setSearchTerm(phone);
-    if (!phone.trim()) { fetchAll(true); return; }
-    try {
-      const res = await api.ticketAPI.getMuseumTicketsByPhone(museumId, phone);
-      setTickets(res?.data ?? res ?? []);
-    } catch { toast.error('Search failed'); }
-  };
+
 
   const openVerifyModal = (ticket) => {
-    setSelectedTicket(ticket); setVerifyCode(''); setShowVerifyPin(false); setShowVerifyModal(true);
+    setSelectedTicket(ticket); 
+    setVerifyCode(''); 
+    setShowVerifyPin(false); 
+    setEntryCount(ticket.remainingVisitors || ticket.totalVisitors || 1);
+    setShowVerifyModal(true);
   };
 
   const handleVerifyTicket = async () => {
     if (!selectedTicket || verifyCode.length !== 4) return;
     try {
-      await api.ticketAPI.verify({ ticketId: selectedTicket.id, verificationCode: verifyCode, museumId });
+      await api.ticketAPI.verify({ 
+        ticketId: selectedTicket.id, 
+        verificationCode: verifyCode, 
+        museumId,
+        entryCount 
+      });
       toast.success('Ticket verified! Entry granted ✅');
       setShowVerifyModal(false); setSelectedTicket(null); setVerifyCode('');
       fetchAll(true);
-    } catch { toast.error('Invalid code. Check and retry.'); }
+    } catch (err) { 
+      toast.error(err?.message || err?.response?.data?.message || 'Invalid code. Check and retry.'); 
+    }
   };
 
   const downloadQRCode = () => {
@@ -261,6 +270,12 @@ const AdminDashboard = () => {
     };
     return <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${m[status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>{status}</span>;
   };
+  const filteredTickets = tickets.filter(t => {
+    const term = searchTerm.toLowerCase().trim();
+    if (!term) return true;
+    return (t.ticketNumber && t.ticketNumber.toLowerCase().includes(term)) ||
+           (t.userEmail && t.userEmail.toLowerCase().includes(term));
+  });
 
   if (loading && !stats) {
     return (
@@ -420,7 +435,7 @@ const AdminDashboard = () => {
             liveStats={liveStats}
             tickets={tickets} 
             reviews={reviews} 
-            onSettingsUpdated={() => fetchAll(true)} 
+            onSettingsUpdated={() => fetchAll(false)} 
           />
         )}
 
@@ -430,40 +445,39 @@ const AdminDashboard = () => {
             <h2 className="text-2xl font-extrabold text-gray-900">Ticket Verification</h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2 bg-white rounded-2xl shadow-md p-6 border border-gray-100">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Search by Phone</p>
-                <input type="tel" placeholder="Enter customer phone number…" value={searchTerm}
-                  onChange={e => handlePhoneSearch(e.target.value)}
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Search by Ticket # or Email</p>
+                <input type="text" placeholder="Enter ticket number or email..." value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-sm" />
               </div>
               <div className="bg-indigo-50 border border-indigo-100 rounded-2xl shadow-md p-6 flex flex-col justify-center">
                 <p className="text-xs font-bold text-indigo-500 uppercase mb-1">Found</p>
-                <p className="text-5xl font-black text-indigo-700">{tickets.length}</p>
-                <p className="text-sm text-indigo-400">ticket{tickets.length !== 1 ? 's':''}</p>
+                <p className="text-5xl font-black text-indigo-700">{filteredTickets.length}</p>
+                <p className="text-sm text-indigo-400">ticket{filteredTickets.length !== 1 ? 's':''}</p>
               </div>
             </div>
             <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
-              {tickets.length === 0 ? (
+              {filteredTickets.length === 0 ? (
                 <div className="text-center py-16">
                   <Ticket className="h-12 w-12 mx-auto mb-3 text-gray-200" />
                   <p className="font-semibold text-gray-500">No tickets found</p>
-                  <p className="text-sm text-gray-400 mt-1">{searchTerm ? 'Try a different number' : 'Enter phone number to search'}</p>
+                  <p className="text-sm text-gray-400 mt-1">{searchTerm ? 'Try a different search term' : 'Enter details to search'}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-100">
-                        {['Ticket #','Email','Phone','Visitors','Amount','Status','Date','Action'].map(h => (
+                        {['Ticket #','Email','Visitors','Amount','Status','Date','Action'].map(h => (
                           <th key={h} className="px-4 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {tickets.map(t => (
+                      {filteredTickets.map(t => (
                         <tr key={t.id} className="hover:bg-indigo-50/30 transition-colors">
                           <td className="px-4 py-4 font-mono text-sm font-bold text-indigo-600 whitespace-nowrap">{t.ticketNumber}</td>
                           <td className="px-4 py-4 text-sm text-gray-600 max-w-[160px] truncate">{t.userEmail}</td>
-                          <td className="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">{t.phone||'—'}</td>
                           <td className="px-4 py-4 whitespace-nowrap">
                             <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">{t.adults}A</span>{' '}
                             <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">{t.children}C</span>
@@ -473,9 +487,9 @@ const AdminDashboard = () => {
                           <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">{format(new Date(t.createdAt),'dd MMM yy')}</td>
                           <td className="px-4 py-4">
                             <button onClick={() => openVerifyModal(t)}
-                              disabled={t.status==='USED'||t.status==='CANCELLED'}
+                              disabled={t.status==='USED'||t.status==='CANCELLED'||t.status==='EXPIRED'}
                               className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                                t.status==='USED'||t.status==='CANCELLED'
+                                t.status==='USED'||t.status==='CANCELLED'||t.status==='EXPIRED'
                                   ? 'text-gray-300 bg-gray-50 cursor-not-allowed'
                                   : 'text-white bg-indigo-600 hover:bg-indigo-700'
                               }`}>
@@ -653,42 +667,41 @@ const AdminDashboard = () => {
                 <Settings className="h-5 w-5 text-indigo-500" /> Ticket Prices & Capacity
               </h3>
               <form onSubmit={handleSaveSettings} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Adult Price (₹)</label>
-                    <input type="number" min="0" value={settingsForm.adultPrice}
-                      onChange={e => setSettingsForm(p=>({...p,adultPrice:e.target.value}))}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-indigo-700" />
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Adult Price (₹)</label>
+                      <input type="number" min="0" value={settingsForm.adultPrice}
+                        onChange={e => setSettingsForm(p=>({...p,adultPrice:e.target.value}))}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-indigo-700" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Child Price (₹)</label>
+                      <input type="number" min="0" value={settingsForm.childPrice}
+                        onChange={e => setSettingsForm(p=>({...p,childPrice:e.target.value}))}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-purple-700" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Daily Seat Limit</label>
+                      <input type="number" min="1" value={settingsForm.seatLimit}
+                        onChange={e => setSettingsForm(p=>({...p,seatLimit:e.target.value}))}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-gray-700" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Child Price (₹)</label>
-                    <input type="number" min="0" value={settingsForm.childPrice}
-                      onChange={e => setSettingsForm(p=>({...p,childPrice:e.target.value}))}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-purple-700" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Daily Seat Limit</label>
-                    <input type="number" min="1" value={settingsForm.seatLimit}
-                      onChange={e => setSettingsForm(p=>({...p,seatLimit:e.target.value}))}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none text-2xl font-black text-gray-700" />
-                  </div>
-                  <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Open Time</label>
                       <input type="time" value={settingsForm.openingTime}
                         onChange={e => setSettingsForm(p=>({...p,openingTime:e.target.value}))}
-                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-indigo-400 outline-none text-sm font-semibold" />
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 outline-none text-lg font-bold text-gray-700" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Close Time</label>
                       <input type="time" value={settingsForm.closingTime}
                         onChange={e => setSettingsForm(p=>({...p,closingTime:e.target.value}))}
-                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-indigo-400 outline-none text-sm font-semibold" />
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 outline-none text-lg font-bold text-gray-700" />
                     </div>
                   </div>
-                </div>
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-sm text-blue-800">
-                  ℹ️ All changes reflect <strong>instantly</strong> in the visitor chatbot (15-second sync).
                 </div>
                 <button type="submit" disabled={savingSettings}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md">
@@ -757,7 +770,28 @@ const AdminDashboard = () => {
                   <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">{selectedTicket.children} Child</span>
                   <span className="ml-auto font-black text-gray-900">₹{selectedTicket.totalPrice}</span>
                 </div>
+                {selectedTicket.totalVisitors > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <p className="text-xs text-gray-500 font-bold uppercase mb-1">Entry Status</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      <span className="text-indigo-600 font-bold">{selectedTicket.admittedVisitors || 0}</span> admitted / <span className="font-bold">{selectedTicket.totalVisitors}</span> total
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Partial Entry Selection */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Number of Visitors Entering Now</label>
+                <input type="number" 
+                  min="1" 
+                  max={selectedTicket.remainingVisitors || selectedTicket.totalVisitors}
+                  value={entryCount}
+                  onChange={e => setEntryCount(parseInt(e.target.value) || 1)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none font-bold text-gray-800"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">4-Digit Staff Code</label>
                 <div className="relative">

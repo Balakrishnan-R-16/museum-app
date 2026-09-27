@@ -122,10 +122,34 @@ const Home = () => {
               <p className="max-w-sm text-base leading-7 text-stone-200 sm:text-lg">
                 Find the exhibitions worth leaving the house for, then keep your entry ticket in your pocket.
               </p>
-              <div className="flex items-center gap-3 text-sm font-medium text-white/90 shrink-0">
+              <button 
+                onClick={() => {
+                  if (navigator.geolocation) {
+                    toast.loading('Finding museums near you...', { id: 'geo' });
+                    navigator.geolocation.getCurrentPosition(
+                      async (pos) => {
+                        try {
+                          const res = await publicAPI.getNearbyMuseums(pos.coords.latitude, pos.coords.longitude, 50);
+                          setMuseums(res.data || res || []);
+                          setSearchParams({ query: '', location: 'Nearby' });
+                          toast.success('Found nearby museums!', { id: 'geo' });
+                          // scroll to results
+                          window.scrollTo({ top: 600, behavior: 'smooth' });
+                        } catch (err) {
+                          toast.error('Could not fetch nearby museums.', { id: 'geo' });
+                        }
+                      },
+                      () => toast.error('Location access denied.', { id: 'geo' })
+                    );
+                  } else {
+                    toast.error('Geolocation is not supported by this browser.');
+                  }
+                }}
+                className="flex items-center gap-3 text-sm font-medium text-white/90 shrink-0 hover:text-white transition-colors cursor-pointer text-left"
+              >
                 <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-white/10"><ArrowDownRight className="h-4 w-4" /></span>
                 Browse nearby
-              </div>
+              </button>
             </div>
           </div>
 
@@ -345,11 +369,8 @@ const Home = () => {
             Join hundreds of heritage sites offering instant QR ticketing. Setup takes less than 5 minutes and gives you a beautiful public profile.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-5">
-            <Link to="/register-museum" className="w-full sm:w-auto px-8 py-4 bg-white text-stone-900 font-extrabold rounded-2xl hover:bg-stone-100 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 text-lg">
-              Register Your Museum
-            </Link>
-            <Link to="/admin-login" className="w-full sm:w-auto px-8 py-4 bg-black/40 text-white font-bold rounded-2xl hover:bg-black/60 transition-all border border-white/20 text-lg backdrop-blur-md">
-              Owner Login
+            <Link to="/login" className="w-full sm:w-auto px-8 py-4 bg-white text-stone-900 font-extrabold rounded-2xl hover:bg-stone-100 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 text-lg">
+              Login
             </Link>
           </div>
         </div>

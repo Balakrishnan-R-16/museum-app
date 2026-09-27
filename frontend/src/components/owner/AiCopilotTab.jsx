@@ -42,7 +42,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
     {
       sender: 'ai',
       time: 'Just now',
-      text: `Hello ${mName} Administrator! 👋\n\nI am your **MuseumAI Operations Copilot**, connected to your live booking database via Gemini AI.\n\n• **Current Capacity**: ${seatLimit} seats (${museum?.bookingStatus ? '✅ Booking Open' : '❌ Booking Closed'})\n• **Today's Tickets**: ${todayTix} issued · **Today's Revenue**: ₹${todayRev.toLocaleString('en-IN')}\n\nAsk me anything about revenue, ticket sales, capacity, visitor counts, top days, or average ratings.`,
+      text: `Hello ${mName} Administrator! 👋\n\nI am your **MuseumAI Operations Copilot**, connected to your live booking database.\n\n• **Current Capacity**: ${seatLimit} seats (${museum?.bookingStatus ? '✅ Booking Open' : '❌ Booking Closed'})\n• **Today's Tickets**: ${todayTix} issued · **Today's Revenue**: ₹${todayRev.toLocaleString('en-IN')}\n\nAsk me anything about revenue, ticket sales, capacity, visitor counts, top days, or average ratings.`,
       source: 'system'
     }
   ]);
@@ -63,11 +63,11 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
   // ════════════════════════════════════════════════════════════════════════
   // 1. CROWD FORECAST (real API)
   // ════════════════════════════════════════════════════════════════════════
-  const loadCrowdForecast = async () => {
+  const loadCrowdForecast = async (forceRefresh = false) => {
     setCrowdLoading(true);
     setCrowdError(null);
     try {
-      const res = await api.aiAPI.crowdForecast();
+      const res = await api.aiAPI.crowdForecast(forceRefresh);
       const body = res.data || res;
       if (body.success === false) {
         setCrowdError(body.message || 'Failed to load crowd forecast');
@@ -84,11 +84,11 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
   // ════════════════════════════════════════════════════════════════════════
   // 2. YIELD OPTIMIZER (real API)
   // ════════════════════════════════════════════════════════════════════════
-  const loadYieldRecommendation = async () => {
+  const loadYieldRecommendation = async (forceRefresh = false) => {
     setYieldLoading(true);
     setYieldError(null);
     try {
-      const res = await api.aiAPI.yieldRecommendation();
+      const res = await api.aiAPI.yieldRecommendation(forceRefresh);
       const body = res.data || res;
       if (body.success === false) {
         setYieldError(body.message || 'Failed to load yield recommendation');
@@ -125,11 +125,11 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
   // ════════════════════════════════════════════════════════════════════════
   // 3. SENTIMENT ANALYSIS (real API)
   // ════════════════════════════════════════════════════════════════════════
-  const loadSentimentAnalysis = async () => {
+  const loadSentimentAnalysis = async (forceRefresh = false) => {
     setSentimentLoading(true);
     setSentimentError(null);
     try {
-      const res = await api.aiAPI.sentimentAnalysis();
+      const res = await api.aiAPI.sentimentAnalysis(forceRefresh);
       const body = res.data || res;
       if (body.success === false) {
         setSentimentError(body.message || 'Failed to load sentiment analysis');
@@ -281,10 +281,9 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
           <div>
             <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
               MuseumAI Operations Copilot
-              <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold border border-indigo-200">Gemini Powered</span>
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Real AI insights from your live booking data via Google Gemini
+              Real AI insights from your live booking data
             </p>
           </div>
         </div>
@@ -313,7 +312,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
               <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
                 Crowd Forecast
               </span>
-              <button onClick={loadCrowdForecast} className="text-gray-400 hover:text-indigo-600 cursor-pointer" title="Refresh">
+              <button onClick={() => loadCrowdForecast(true)} className="text-gray-400 hover:text-indigo-600 cursor-pointer" title="Refresh">
                 <RefreshCw className={`h-4 w-4 ${crowdLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
@@ -323,7 +322,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
             {crowdLoading && !crowdData ? (
               <LoadingCard text="Analyzing booking patterns..." />
             ) : crowdError ? (
-              <ErrorCard message={crowdError} onRetry={loadCrowdForecast} />
+              <ErrorCard message={crowdError} onRetry={() => loadCrowdForecast(true)} />
             ) : crowdData ? (
               <>
                 <div className="mt-4 space-y-2.5">
@@ -377,17 +376,16 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
               <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
                 Yield Optimizer
               </span>
-              <button onClick={loadYieldRecommendation} className="text-gray-400 hover:text-emerald-600 cursor-pointer" title="Refresh">
+              <button onClick={() => loadYieldRecommendation(true)} className="text-gray-400 hover:text-emerald-600 cursor-pointer" title="Refresh">
                 <RefreshCw className={`h-4 w-4 ${yieldLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
             <h3 className="text-lg font-black text-gray-900">Dynamic Pricing</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Rule-based pricing with AI explanation</p>
 
             {yieldLoading && !yieldData ? (
               <LoadingCard text="Computing pricing recommendation..." />
             ) : yieldError ? (
-              <ErrorCard message={yieldError} onRetry={loadYieldRecommendation} />
+              <ErrorCard message={yieldError} onRetry={() => loadYieldRecommendation(true)} />
             ) : yieldData ? (
               <>
                 <div className="mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
@@ -404,7 +402,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
-                    Occupancy: {yieldData.occupancyRate}% · Multiplier: {yieldData.multiplier}x
+                    Today: {yieldData.todayBookedVisitors ?? '—'}/{yieldData.capacity ?? '—'} visitors · Occupancy: {yieldData.occupancyRate}% · Multiplier: {yieldData.multiplier}x
                   </div>
                   {yieldData.projectedMonthlyGain > 0 && (
                     <div className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5 border border-emerald-200">
@@ -464,7 +462,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
               <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-100">
                 Reputation Radar
               </span>
-              <button onClick={loadSentimentAnalysis} className="text-gray-400 hover:text-purple-600 cursor-pointer" title="Refresh">
+              <button onClick={() => loadSentimentAnalysis(true)} className="text-gray-400 hover:text-purple-600 cursor-pointer" title="Refresh">
                 <RefreshCw className={`h-4 w-4 ${sentimentLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
@@ -474,7 +472,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
             {sentimentLoading && !sentimentData ? (
               <LoadingCard text="Analyzing visitor reviews..." />
             ) : sentimentError ? (
-              <ErrorCard message={sentimentError} onRetry={loadSentimentAnalysis} />
+              <ErrorCard message={sentimentError} onRetry={() => loadSentimentAnalysis(true)} />
             ) : sentimentData ? (
               <>
                 <div className="mt-4 space-y-3">
@@ -549,12 +547,12 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
               <Bot className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base leading-tight">Ask Museum AI (Gemini-Powered)</h3>
+              <h3 className="font-extrabold text-base leading-tight">Ask Museum AI</h3>
               <p className="text-indigo-100 text-xs mt-0.5">Conversational BI grounded in your museum's live data</p>
             </div>
           </div>
           <span className="hidden sm:inline-flex text-xs font-semibold bg-white/20 px-3 py-1 rounded-full text-white backdrop-blur-sm">
-            Gemini AI
+            Museum AI
           </span>
         </div>
 
@@ -639,7 +637,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
               </div>
               <div className="bg-white border border-indigo-200 text-indigo-700 px-4 py-3 rounded-2xl rounded-tl-none text-xs font-semibold shadow-xs flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-indigo-600 animate-pulse" />
-                Gemini AI is analyzing your museum data…
+                Museum AI is analyzing your museum data…
               </div>
             </div>
           )}
@@ -674,7 +672,7 @@ const AiCopilotTab = ({ museum, stats, liveStats, tickets = [], reviews = [], on
                 <Sparkles className="h-5 w-5 text-indigo-600" />
                 AI Review Responder
               </h3>
-              <p className="text-gray-500 text-xs">Gemini-powered personalized responses · Review before posting</p>
+              <p className="text-gray-500 text-xs">AI-powered personalized responses · Review before posting</p>
             </div>
           </div>
 
