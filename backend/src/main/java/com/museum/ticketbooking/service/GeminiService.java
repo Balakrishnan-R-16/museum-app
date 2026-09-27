@@ -28,8 +28,11 @@ public class GeminiService {
     @Value("${gemini.api-key:}")
     private String apiKey;
 
-    @Value("${gemini.model:gemini-2.0-flash}")
+    @Value("${gemini.model:gemini-3.5-flash}")
     private String model;
+
+    @Value("${gemini.sentiment-model:gemini-3.5-flash-lite}")
+    private String sentimentModel;
 
     @Value("${gemini.timeout-seconds:30}")
     private int timeoutSeconds;
@@ -53,11 +56,16 @@ public class GeminiService {
      * @throws GeminiException if the call fails after retries
      */
     public String generateContent(String systemInstruction, String userPrompt) {
+        return generateContent(systemInstruction, userPrompt, false);
+    }
+
+    public String generateContent(String systemInstruction, String userPrompt, boolean useSentimentModel) {
         if (!isConfigured()) {
             throw new GeminiException("AI_SERVICE_UNAVAILABLE", "Gemini API key is not configured.");
         }
 
-        String url = String.format(GEMINI_API_URL, model, apiKey);
+        String targetModel = useSentimentModel ? sentimentModel : model;
+        String url = String.format(GEMINI_API_URL, targetModel, apiKey);
 
         // Build request body
         Map<String, Object> requestBody = buildRequestBody(systemInstruction, userPrompt);
@@ -119,7 +127,11 @@ public class GeminiService {
      * Generate content and parse the response as JSON.
      */
     public JsonNode generateStructuredContent(String systemInstruction, String userPrompt) {
-        String text = generateContent(systemInstruction, userPrompt);
+        return generateStructuredContent(systemInstruction, userPrompt, false);
+    }
+
+    public JsonNode generateStructuredContent(String systemInstruction, String userPrompt, boolean useSentimentModel) {
+        String text = generateContent(systemInstruction, userPrompt, useSentimentModel);
 
         // Strip markdown code fences if present
         String cleaned = text.trim();

@@ -40,11 +40,30 @@ public class SecurityConfig {
             .formLogin(form -> form.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authz -> authz
+                // Museum owner endpoints — require MUSEUM role
                 .requestMatchers(new AntPathRequestMatcher("/api/owner/**")).hasRole("MUSEUM")
+
+                // Visitor authenticated endpoints — require VISITOR role
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/tickets")).hasRole("VISITOR")
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/tickets/**")).hasRole("VISITOR")
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/reviews")).hasRole("VISITOR")
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/reviews/**")).hasRole("VISITOR")
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/auth/me")).hasRole("VISITOR")
+
+                // Visitor auth public endpoints (register, login, google)
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/auth/register")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/auth/login")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/auth/google")).permitAll()
+
+                // Public share link for tickets
+                .requestMatchers(new AntPathRequestMatcher("/api/visitor/tickets/by-token/**")).permitAll()
+
+                // Existing public endpoints
                 .requestMatchers(new AntPathRequestMatcher("/api/public/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/public/ai/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/museums/register")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/museums/login")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/api/museums/google")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/tickets/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/payments/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/museums/**")).permitAll()
@@ -62,7 +81,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
+        configuration.setAllowedOriginPatterns(Arrays.asList(
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:5174",
+            "http://localhost:*"
+        ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);

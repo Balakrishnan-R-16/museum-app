@@ -45,6 +45,9 @@ public class PublicMuseumDetailDTO {
     private Boolean bookingStatus;
     private Integer seatLimit;
     
+    private String openingTime;
+    private String closingTime;
+    
     private Double averageRating;
     private Long reviewCount;
     private Long publicViewCount;

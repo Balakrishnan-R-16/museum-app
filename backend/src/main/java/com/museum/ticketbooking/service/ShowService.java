@@ -82,7 +82,7 @@ public class ShowService {
         ticket.setUserEmail(request.getUserEmail());
         ticket.setQuantity(request.getQuantity());
         ticket.setTotalPrice(totalPrice);
-        ticket.setStatus("PENDING");
+        ticket.setStatus("ACTIVE");
         
         ShowTicket savedTicket = showTicketRepository.save(ticket);
         

@@ -52,12 +52,9 @@ public class TicketController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> verifyTicket(
             @Valid @RequestBody VerificationRequest request) {
         try {
-            boolean verified = ticketService.verifyTicket(request);
-            Map<String, Object> data = new HashMap<>();
-            data.put("verified", verified);
-            data.put("ticketId", request.getTicketId());
+            Map<String, Object> data = ticketService.verifyTicketWithEntry(request);
             return ResponseEntity.ok(ApiResponse.success(
-                    verified ? "Ticket verified successfully" : "Ticket verification failed",
+                    (String) data.getOrDefault("message", "Ticket verified successfully"),
                     data));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()

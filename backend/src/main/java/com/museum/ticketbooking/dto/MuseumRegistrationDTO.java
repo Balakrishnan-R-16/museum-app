@@ -15,8 +15,7 @@ public class MuseumRegistrationDTO {
     @NotBlank(message = "Email is required")
     private String email;
     
-    @NotBlank(message = "Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
     
     @NotNull(message = "Seat capacity is required")
@@ -30,4 +29,7 @@ public class MuseumRegistrationDTO {
     @NotNull(message = "Child ticket price is required")
     @Min(value = 0, message = "Price cannot be negative")
     private Double childTicketPrice;
+    
+    // Optional Google ID token for sign-up without password
+    private String idToken;
 }

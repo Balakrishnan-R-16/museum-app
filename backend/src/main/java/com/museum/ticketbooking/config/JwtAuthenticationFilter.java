@@ -40,7 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = authHeader.substring(7);
             String email = jwtUtil.extractEmail(token);
             String role = jwtUtil.extractRole(token);
-            String museumId = jwtUtil.extractMuseumId(token);
+            String userId = jwtUtil.extractMuseumId(token);
 
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (jwtUtil.isTokenValid(token)) {
@@ -52,9 +52,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    // Store museumId in request attribute for downstream use
-                    request.setAttribute("museumId", museumId);
+                    // Store userId and email in request attributes for downstream use
+                    request.setAttribute("museumId", userId);
+                    request.setAttribute("userId", userId);
                     request.setAttribute("userEmail", email);
+                    request.setAttribute("userRole", role);
 
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
@@ -75,6 +77,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/public/ai/")
                 || path.startsWith("/api/museums/register")
                 || path.startsWith("/api/museums/login")
+                || path.startsWith("/api/visitor/auth/register")
+                || path.startsWith("/api/visitor/auth/login")
+                || path.startsWith("/api/visitor/auth/google")
+                || path.startsWith("/api/visitor/tickets/by-token/")
                 || path.startsWith("/api/tickets/")
                 || path.startsWith("/api/payments/")
                 || path.startsWith("/api/museums") && request.getMethod().equals("GET")

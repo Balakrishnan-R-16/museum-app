@@ -18,4 +18,13 @@ public interface MuseumRepository extends JpaRepository<Museum, Long> {
     
     @Query("SELECT m FROM Museum m ORDER BY m.museumName ASC")
     List<Museum> findAllMuseumsOrdered();
+    
+    // Haversine formula to calculate distance in km
+    @Query(value = "SELECT m.*, " +
+           "(6371 * acos(cos(radians(:lat)) * cos(radians(m.latitude)) * cos(radians(m.longitude) - radians(:lon)) + sin(radians(:lat)) * sin(radians(m.latitude)))) AS distance " +
+           "FROM museums m " +
+           "WHERE m.latitude IS NOT NULL AND m.longitude IS NOT NULL " +
+           "AND (6371 * acos(cos(radians(:lat)) * cos(radians(m.latitude)) * cos(radians(m.longitude) - radians(:lon)) + sin(radians(:lat)) * sin(radians(m.latitude)))) <= :radius " +
+           "ORDER BY distance ASC", nativeQuery = true)
+    List<Museum> findNearbyMuseums(@Param("lat") double lat, @Param("lon") double lon, @Param("radius") double radius);
 }

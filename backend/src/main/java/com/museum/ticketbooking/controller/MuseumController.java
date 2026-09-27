@@ -62,6 +62,18 @@ public class MuseumController {
         }
     }
     
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> googleLogin(@RequestBody Map<String, String> request) {
+        try {
+            String token = request.get("credential");
+            Map<String, Object> data = museumService.googleLogin(token);
+            return ResponseEntity.ok(ApiResponse.success("Login successful", data));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+    
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<Museum>> getMuseumById(@PathVariable Long id) {
         try {
@@ -83,6 +95,21 @@ public class MuseumController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(ApiResponse.error("Failed to retrieve museums"));
+        }
+    }
+
+    @GetMapping("/nearby")
+    public ResponseEntity<ApiResponse<List<Museum>>> getNearbyMuseums(
+            @RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam(defaultValue = "50") double radius) {
+        try {
+            List<Museum> museums = museumService.getNearbyMuseums(lat, lon, radius);
+            museums.forEach(m -> m.setPassword(null));
+            return ResponseEntity.ok(ApiResponse.success("Nearby museums retrieved", museums));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
         }
     }
     

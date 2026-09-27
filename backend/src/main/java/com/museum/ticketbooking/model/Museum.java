@@ -111,6 +111,9 @@ public class Museum {
     private Double latitude;
     private Double longitude;
 
+    @Transient
+    private Double distance; // calculated distance in km
+
     @Column(name = "accessibility_notes", columnDefinition = "TEXT")
     private String accessibilityNotes;
 

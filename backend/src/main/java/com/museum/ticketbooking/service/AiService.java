@@ -43,6 +43,7 @@ public class AiService {
     private final MuseumReviewRepository reviewRepository;
     private final ShowRepository showRepository;
     private final MuseumAmenityRepository amenityRepository;
+    private final AiCacheRepository aiCacheRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${gemini.max-reviews-per-analysis:50}")
@@ -56,20 +57,48 @@ public class AiService {
                      TicketRepository ticketRepository,
                      MuseumReviewRepository reviewRepository,
                      ShowRepository showRepository,
-                     MuseumAmenityRepository amenityRepository) {
+                     MuseumAmenityRepository amenityRepository,
+                     AiCacheRepository aiCacheRepository) {
         this.geminiService = geminiService;
         this.museumRepository = museumRepository;
         this.ticketRepository = ticketRepository;
         this.reviewRepository = reviewRepository;
         this.showRepository = showRepository;
         this.amenityRepository = amenityRepository;
+        this.aiCacheRepository = aiCacheRepository;
+    }
+
+    private String getOrFetchAiText(Long museumId, String cacheKey, boolean forceRefresh, String fallbackResult, java.util.function.Supplier<String> aiCall) {
+        if (!forceRefresh) {
+            java.util.Optional<com.museum.ticketbooking.model.AiCache> cached = aiCacheRepository.findByMuseumIdAndCacheKey(museumId, cacheKey);
+            if (cached.isPresent()) {
+                return cached.get().getCacheValue();
+            }
+        }
+        
+        String result;
+        try {
+            result = aiCall.get();
+        } catch (GeminiService.GeminiException e) {
+            result = fallbackResult;
+        }
+        
+        com.museum.ticketbooking.model.AiCache cache = aiCacheRepository.findByMuseumIdAndCacheKey(museumId, cacheKey)
+                .orElse(new com.museum.ticketbooking.model.AiCache());
+        cache.setMuseumId(museumId);
+        cache.setCacheKey(cacheKey);
+        cache.setCacheValue(result);
+        cache.setUpdatedAt(java.time.LocalDateTime.now());
+        aiCacheRepository.save(cache);
+        
+        return result;
     }
 
     // ════════════════════════════════════════════════════════════════════════
     // 1. CROWD FORECAST & STAFFING
     // ════════════════════════════════════════════════════════════════════════
 
-    public Map<String, Object> getCrowdForecast(Long museumId) {
+    public Map<String, Object> getCrowdForecast(Long museumId, boolean forceRefresh) {
         Museum museum = getMuseum(museumId);
         Map<String, Object> result = new LinkedHashMap<>();
 
@@ -106,42 +135,75 @@ public class AiService {
                 hourlyData.get("slots").toString(), recentTickets.size()
         );
 
-        try {
-            String explanation = geminiService.generateContent(systemPrompt, userPrompt);
-            result.put("explanation", explanation);
-            result.put("staffingAdvice", explanation); // Gemini combines both
-        } catch (GeminiService.GeminiException e) {
-            result.put("explanation", "AI explanation temporarily unavailable.");
-            result.put("staffingAdvice", "AI staffing advice temporarily unavailable.");
-            result.put("aiError", e.getErrorCode());
+        String explanation = getOrFetchAiText(museumId, "CROWD_FORECAST", forceRefresh, "AI explanation temporarily unavailable.", () -> 
+            geminiService.generateContent(systemPrompt, userPrompt)
+        );
+        result.put("explanation", explanation);
+        result.put("staffingAdvice", explanation); // Gemini combines both
+        
+        if (explanation.equals("AI explanation temporarily unavailable.")) {
+            result.put("aiError", "AI_SERVICE_UNAVAILABLE");
         }
 
         return result;
     }
 
     private Map<String, Object> computeHourlyDistribution(List<Ticket> tickets, Museum museum) {
-        // Group tickets by hour of creation
-        Map<Integer, Long> hourCounts = new TreeMap<>();
-        for (int h = 9; h <= 17; h++) hourCounts.put(h, 0L);
+        // Generate 2-hour time slots from museum opening to closing
+        String openStr = museum.getOpeningTime() != null ? museum.getOpeningTime() : "09:00";
+        String closeStr = museum.getClosingTime() != null ? museum.getClosingTime() : "17:00";
+        int openHour = Integer.parseInt(openStr.split(":")[0]);
+        int closeHour = Integer.parseInt(closeStr.split(":")[0]);
+
+        Map<Integer, Long> slotCounts = new TreeMap<>();
+        for (int h = openHour; h < closeHour; h += 2) {
+            slotCounts.put(h, 0L);
+        }
 
         for (Ticket t : tickets) {
-            if (t.getCreatedAt() != null) {
-                int hour = t.getCreatedAt().getHour();
-                hourCounts.merge(hour, 1L, Long::sum);
+            int hour = -1;
+            if (t.getSlotStart() != null) {
+                hour = t.getSlotStart().getHour();
+            } else if (t.getCreatedAt() != null) {
+                hour = t.getCreatedAt().getHour();
+            }
+
+            if (hour >= 0) {
+                long visitorCount = 1L;
+                if (t.getTotalVisitors() != null && t.getTotalVisitors() > 0) {
+                    visitorCount = t.getTotalVisitors();
+                } else {
+                    int adults = t.getAdults() != null ? t.getAdults() : 0;
+                    int children = t.getChildren() != null ? t.getChildren() : 0;
+                    if (adults + children > 0) {
+                        visitorCount = adults + children;
+                    }
+                }
+
+                int slotStart = openHour;
+                for (int h = openHour; h < closeHour; h += 2) {
+                    if (hour >= h && hour < h + 2) {
+                        slotStart = h;
+                        break;
+                    }
+                }
+                slotCounts.merge(slotStart, visitorCount, Long::sum);
             }
         }
 
-        long maxCount = hourCounts.values().stream().mapToLong(Long::longValue).max().orElse(1L);
+        long maxCount = slotCounts.values().stream().mapToLong(Long::longValue).max().orElse(1L);
+        if (maxCount == 0) maxCount = 1L; // prevent division by zero
         int capacity = museum.getSeatLimit() != null ? museum.getSeatLimit() : 100;
 
         List<Map<String, Object>> slots = new ArrayList<>();
-        for (Map.Entry<Integer, Long> entry : hourCounts.entrySet()) {
-            int hour = entry.getKey();
+        for (Map.Entry<Integer, Long> entry : slotCounts.entrySet()) {
+            int slotH = entry.getKey();
             long count = entry.getValue();
             int percentage = maxCount > 0 ? (int) Math.round((double) count / maxCount * 100) : 0;
+            int endH = Math.min(slotH + 2, closeHour);
 
             Map<String, Object> slot = new LinkedHashMap<>();
-            slot.put("time", String.format("%02d:00 - %02d:00", hour, hour + 1));
+            slot.put("time", String.format("%02d:00 - %02d:00", slotH, endH));
             slot.put("ticketCount", count);
             slot.put("percentageOfPeak", percentage);
             slot.put("label", percentage >= 80 ? "Rush Peak" : percentage >= 50 ? "Moderate" : percentage >= 25 ? "Steady" : "Calm");
@@ -157,7 +219,7 @@ public class AiService {
     // 2. YIELD OPTIMIZER
     // ════════════════════════════════════════════════════════════════════════
 
-    public Map<String, Object> getYieldRecommendation(Long museumId) {
+    public Map<String, Object> getYieldRecommendation(Long museumId, boolean forceRefresh) {
         Museum museum = getMuseum(museumId);
         Map<String, Object> result = new LinkedHashMap<>();
 
@@ -165,12 +227,15 @@ public class AiService {
         double currentChild = museum.getChildPrice() != null ? museum.getChildPrice() : 15.0;
         int capacity = museum.getSeatLimit() != null ? museum.getSeatLimit() : 100;
 
-        // Compute demand metrics from last 30 days
+        // Real-time: count today's booked visitors
+        int todayBookedVisitors = ticketRepository.countBookedVisitorsForDate(museumId, LocalDate.now());
+
+        // Also get last 30 days for trend context
         LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
         List<Ticket> recentTickets = ticketRepository.findByMuseum_IdAndCreatedAtAfterOrderByCreatedAtAsc(museumId, thirtyDaysAgo);
 
-        double avgDailyTickets = 0;
         double totalRevenue = 0;
+        double avgDailyTickets = 0;
         if (!recentTickets.isEmpty()) {
             long days = java.time.temporal.ChronoUnit.DAYS.between(
                     recentTickets.get(0).getCreatedAt().toLocalDate(), LocalDate.now()) + 1;
@@ -179,7 +244,9 @@ public class AiService {
                     .mapToDouble(t -> t.getTotalPrice() != null ? t.getTotalPrice() : 0.0).sum();
         }
 
-        double occupancyRate = capacity > 0 ? avgDailyTickets / capacity : 0;
+        // Real-time occupancy based on today's actual bookings vs capacity
+        double occupancyRate = capacity > 0 ? (double) todayBookedVisitors / capacity : 0;
+        if (occupancyRate > 1.0) occupancyRate = 1.0; // Cap at 100%
 
         // Deterministic price suggestion with guardrails
         double multiplier;
@@ -202,6 +269,8 @@ public class AiService {
         result.put("suggestedPricing", Map.of("adult", suggestedAdult, "child", suggestedChild));
         result.put("multiplier", multiplier);
         result.put("occupancyRate", Math.round(occupancyRate * 100));
+        result.put("todayBookedVisitors", todayBookedVisitors);
+        result.put("capacity", capacity);
         result.put("avgDailyTickets", Math.round(avgDailyTickets * 10.0) / 10.0);
         result.put("projectedMonthlyGain", projectedMonthlyGain);
         result.put("totalRevenueLast30Days", totalRevenue);
@@ -209,11 +278,10 @@ public class AiService {
         result.put("dataSource", "rule_based_recommendation");
 
         // Gemini explanation of trade-offs
-        try {
-            String systemPrompt = "You are a pricing advisor for a museum. " +
-                    "Explain the pricing recommendation below in 2-3 sentences. " +
-                    "Mention the trade-offs and why this change could help. " +
-                    "Be concise and actionable. Do not invent numbers.";
+        String systemPrompt = "You are a pricing advisor for a museum. " +
+                "Explain the pricing recommendation below in 2-3 sentences. " +
+                "Mention the trade-offs and why this change could help. " +
+                "Be concise and actionable. Do not invent numbers.";
             String userPrompt = String.format(
                     "Museum: %s\nCurrent prices: Adult ₹%.0f, Child ₹%.0f\n" +
                     "Suggested: Adult ₹%.0f, Child ₹%.0f (multiplier: %.2fx)\n" +
@@ -222,13 +290,13 @@ public class AiService {
                     suggestedAdult, suggestedChild, multiplier,
                     Math.round(occupancyRate * 100), avgDailyTickets, capacity
             );
-            result.put("explanation", geminiService.generateContent(systemPrompt, userPrompt));
-        } catch (GeminiService.GeminiException e) {
-            result.put("explanation", multiplier > 1.0
-                    ? "Based on current demand patterns, a moderate price increase is recommended."
-                    : "Current pricing appears appropriate for the observed demand level.");
-            result.put("aiError", e.getErrorCode());
-        }
+            String explanation = getOrFetchAiText(museumId, "YIELD_RECOMMENDATION", forceRefresh, "AI pricing recommendation temporarily unavailable.", () ->
+                geminiService.generateContent(systemPrompt, userPrompt)
+            );
+            result.put("explanation", explanation);
+            if (explanation.equals("AI pricing recommendation temporarily unavailable.")) {
+                result.put("aiError", "AI_SERVICE_UNAVAILABLE");
+            }
 
         return result;
     }
@@ -237,10 +305,10 @@ public class AiService {
     // 3. SENTIMENT ANALYSIS
     // ════════════════════════════════════════════════════════════════════════
 
-    public Map<String, Object> getSentimentAnalysis(Long museumId) {
+    public Map<String, Object> getSentimentAnalysis(Long museumId, boolean forceRefresh) {
         // Check cache
         CachedSentiment cached = sentimentCache.get(museumId);
-        if (cached != null && cached.isValid()) {
+        if (!forceRefresh && cached != null && cached.isValid()) {
             return cached.result;
         }
 
@@ -292,7 +360,23 @@ public class AiService {
 
         try {
             String userPrompt = "Reviews to analyze:\n" + objectMapper.writeValueAsString(reviewData);
-            JsonNode parsed = geminiService.generateStructuredContent(systemPrompt, userPrompt);
+            
+            String fallbackJson = "{\"approvalRate\":0,\"positiveHighlights\":[],\"improvementAreas\":[],\"summary\":\"AI sentiment analysis temporarily unavailable due to API limits.\"}";
+            
+            String jsonStr = getOrFetchAiText(museumId, "SENTIMENT_ANALYSIS", forceRefresh, fallbackJson, () -> {
+                JsonNode p = geminiService.generateStructuredContent(systemPrompt, userPrompt, true);
+                try {
+                    return objectMapper.writeValueAsString(p);
+                } catch (Exception e) {
+                    throw new GeminiService.GeminiException("JSON_ERROR", "Failed to stringify");
+                }
+            });
+            
+            if (jsonStr.equals(fallbackJson)) {
+                result.put("aiError", "AI_SERVICE_UNAVAILABLE");
+            }
+            
+            JsonNode parsed = objectMapper.readTree(jsonStr);
 
             result.put("approvalRate", parsed.path("approvalRate").asInt(0));
             result.put("sentimentBreakdown", objectMapper.convertValue(

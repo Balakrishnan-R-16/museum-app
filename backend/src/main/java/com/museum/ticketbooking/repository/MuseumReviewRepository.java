@@ -14,6 +14,7 @@ import java.util.List;
 public interface MuseumReviewRepository extends JpaRepository<MuseumReview, Long> {
     Page<MuseumReview> findByMuseumIdAndStatusOrderByCreatedAtDesc(Long museumId, String status, Pageable pageable);
     List<MuseumReview> findByMuseumIdOrderByCreatedAtDesc(Long museumId);
+    List<MuseumReview> findByVisitorEmailOrderByCreatedAtDesc(String visitorEmail);
     
     @Query("SELECT AVG(r.rating) FROM MuseumReview r WHERE r.museumId = :museumId AND r.status = 'PUBLISHED'")
     Double getAverageRating(@Param("museumId") Long museumId);

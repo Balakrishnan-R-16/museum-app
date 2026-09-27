@@ -36,10 +36,11 @@ public class AiController {
     // ════════════════════════════════════════════════════════════════════════
 
     @PostMapping("/api/owner/ai/crowd-forecast")
-    public ResponseEntity<AiResponse<Map<String, Object>>> crowdForecast(HttpServletRequest request) {
+    public ResponseEntity<AiResponse<Map<String, Object>>> crowdForecast(HttpServletRequest request,
+                                                                         @RequestParam(defaultValue = "false") boolean forceRefresh) {
         try {
             Long museumId = getMuseumId(request);
-            Map<String, Object> data = aiService.getCrowdForecast(museumId);
+            Map<String, Object> data = aiService.getCrowdForecast(museumId, forceRefresh);
             String source = data.containsKey("aiError") ? "calculated_analytics" : "gemini+analytics";
             return ResponseEntity.ok(AiResponse.ok(data, source));
         } catch (GeminiService.GeminiException e) {
@@ -52,10 +53,11 @@ public class AiController {
     }
 
     @PostMapping("/api/owner/ai/yield-recommendation")
-    public ResponseEntity<AiResponse<Map<String, Object>>> yieldRecommendation(HttpServletRequest request) {
+    public ResponseEntity<AiResponse<Map<String, Object>>> yieldRecommendation(HttpServletRequest request,
+                                                                               @RequestParam(defaultValue = "false") boolean forceRefresh) {
         try {
             Long museumId = getMuseumId(request);
-            Map<String, Object> data = aiService.getYieldRecommendation(museumId);
+            Map<String, Object> data = aiService.getYieldRecommendation(museumId, forceRefresh);
             String source = data.containsKey("aiError") ? "rule_based_recommendation" : "gemini+rules";
             return ResponseEntity.ok(AiResponse.ok(data, source));
         } catch (GeminiService.GeminiException e) {
@@ -68,10 +70,11 @@ public class AiController {
     }
 
     @PostMapping("/api/owner/ai/sentiment-analysis")
-    public ResponseEntity<AiResponse<Map<String, Object>>> sentimentAnalysis(HttpServletRequest request) {
+    public ResponseEntity<AiResponse<Map<String, Object>>> sentimentAnalysis(HttpServletRequest request,
+                                                                             @RequestParam(defaultValue = "false") boolean forceRefresh) {
         try {
             Long museumId = getMuseumId(request);
-            Map<String, Object> data = aiService.getSentimentAnalysis(museumId);
+            Map<String, Object> data = aiService.getSentimentAnalysis(museumId, forceRefresh);
             String source = (String) data.getOrDefault("dataSource", "gemini");
             return ResponseEntity.ok(AiResponse.ok(data, source));
         } catch (GeminiService.GeminiException e) {

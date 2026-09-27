@@ -54,7 +54,16 @@ public class PublicMuseumController {
     @PostMapping("/{museumId}/reviews")
     public ResponseEntity<MuseumReview> submitReview(@PathVariable Long museumId,
                                                      @RequestBody Map<String, Object> payload) {
-        Long ticketId = ((Number) payload.get("ticketId")).longValue();
+        Long ticketId = null;
+        if (payload.containsKey("ticketId") && payload.get("ticketId") != null) {
+            try {
+                String str = payload.get("ticketId").toString().replaceAll("\\D+", "");
+                if (!str.isEmpty()) ticketId = Long.parseLong(str);
+            } catch (Exception e) {
+                // ignore invalid ticket IDs
+            }
+        }
+        
         String visitorEmail = (String) payload.get("visitorEmail");
         String visitorName = (String) payload.get("visitorName");
         Integer rating = (Integer) payload.get("rating");
@@ -63,5 +72,20 @@ public class PublicMuseumController {
 
         MuseumReview review = reviewService.createReview(museumId, ticketId, visitorEmail, visitorName, rating, title, content);
         return ResponseEntity.ok(review);
+    }
+
+    @GetMapping("/visitor-reviews")
+    public ResponseEntity<List<Map<String, Object>>> getVisitorReviewsByEmail(@RequestParam String email) {
+        return ResponseEntity.ok(reviewService.getVisitorReviews(email));
+    }
+
+    @PutMapping("/reviews/{reviewId}")
+    public ResponseEntity<MuseumReview> updateReviewPublic(@PathVariable Long reviewId,
+                                                           @RequestBody Map<String, Object> payload) {
+        String email = (String) payload.get("visitorEmail");
+        Integer rating = payload.get("rating") != null ? Integer.parseInt(payload.get("rating").toString()) : null;
+        String title = (String) payload.get("title");
+        String content = (String) payload.get("content");
+        return ResponseEntity.ok(reviewService.updateVisitorReview(reviewId, email, rating, title, content));
     }
 }

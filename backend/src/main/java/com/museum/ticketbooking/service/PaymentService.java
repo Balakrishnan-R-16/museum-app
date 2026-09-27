@@ -45,8 +45,11 @@ public class PaymentService {
         try {
             Ticket ticket = ticketService.getTicketById(request.getTicketId());
 
-            if (!"PENDING".equalsIgnoreCase(ticket.getStatus())) {
-                throw new RuntimeException("Payment order can be created only for PENDING tickets");
+            if ("USED".equalsIgnoreCase(ticket.getStatus()) || "CANCELLED".equalsIgnoreCase(ticket.getStatus())) {
+                throw new RuntimeException("Payment order cannot be created for used or cancelled tickets");
+            }
+            if (ticket.getPaymentId() != null && !ticket.getPaymentId().isBlank()) {
+                throw new RuntimeException("Ticket is already paid");
             }
 
             if (ticket.getTotalPrice() == null || ticket.getTotalPrice() <= 0) {
@@ -87,8 +90,18 @@ public class PaymentService {
     public Map<String, Object> verifyPayment(PaymentVerificationRequest request) {
         Ticket ticket = ticketService.getTicketById(request.getTicketId());
 
-        if (!"PENDING".equalsIgnoreCase(ticket.getStatus())) {
+        if ("USED".equalsIgnoreCase(ticket.getStatus()) || "CANCELLED".equalsIgnoreCase(ticket.getStatus())) {
             throw new RuntimeException("Ticket is not in payable state");
+        }
+        if (ticket.getPaymentId() != null && !ticket.getPaymentId().isBlank()) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("ticketId", ticket.getId());
+            response.put("ticketNumber", ticket.getTicketNumber());
+            response.put("paymentId", ticket.getPaymentId());
+            response.put("orderId", ticket.getOrderId());
+            response.put("status", ticket.getStatus());
+            response.put("message", "Payment already verified");
+            return response;
         }
 
         boolean signatureValid = verifyCheckoutSignature(

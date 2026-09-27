@@ -136,6 +136,8 @@ public class PublicMuseumService {
         dto.setChildPrice(m.getChildPrice());
         dto.setBookingStatus(m.getBookingStatus());
         dto.setSeatLimit(m.getSeatLimit());
+        dto.setOpeningTime(m.getOpeningTime());
+        dto.setClosingTime(m.getClosingTime());
         
         dto.setAverageRating(reviewService.getAverageRating(m.getId()));
         dto.setReviewCount(reviewService.getReviewCount(m.getId()));

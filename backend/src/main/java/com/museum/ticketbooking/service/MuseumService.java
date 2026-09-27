@@ -26,16 +26,18 @@ public class MuseumService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final SseService sseService;
+    private final GoogleOAuthService googleOAuthService;
 
     public MuseumService(MuseumRepository museumRepository, TicketRepository ticketRepository,
                          ShowRepository showRepository, PasswordEncoder passwordEncoder,
-                         JwtUtil jwtUtil, SseService sseService) {
+                         JwtUtil jwtUtil, SseService sseService, GoogleOAuthService googleOAuthService) {
         this.museumRepository = museumRepository;
         this.ticketRepository = ticketRepository;
         this.showRepository   = showRepository;
         this.passwordEncoder  = passwordEncoder;
         this.jwtUtil          = jwtUtil;
         this.sseService       = sseService;
+        this.googleOAuthService = googleOAuthService;
     }
 
     /* ── REGISTER ── */
@@ -44,12 +46,23 @@ public class MuseumService {
         if (museumRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already registered");
         }
+        
+        if (request.getIdToken() != null && !request.getIdToken().isEmpty()) {
+            GoogleOAuthService.GoogleUserInfo userInfo = googleOAuthService.verifyIdToken(request.getIdToken());
+            if (!userInfo.getEmail().equalsIgnoreCase(request.getEmail())) {
+                throw new RuntimeException("Google token email does not match requested email");
+            }
+        } else if (request.getPassword() == null || request.getPassword().isEmpty()) {
+            throw new RuntimeException("Password is required if not using Google Sign-In");
+        }
 
         Museum museum = new Museum();
         museum.setMuseumName(request.getMuseumName());
         museum.setLocation(request.getLocation());
         museum.setEmail(request.getEmail());
-        museum.setPassword(passwordEncoder.encode(request.getPassword()));
+        if (request.getPassword() != null && !request.getPassword().isEmpty()) {
+            museum.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         museum.setSeatLimit(request.getSeatCapacity());
         museum.setAdultPrice(request.getAdultTicketPrice());
         museum.setChildPrice(request.getChildTicketPrice());
@@ -80,9 +93,27 @@ public class MuseumService {
         Museum museum = museumRepository.findByEmail(request.getEmail())
             .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
+        if (museum.getPassword() == null || museum.getPassword().isEmpty()) {
+            throw new RuntimeException("This account uses Google Sign-In. Please use 'Continue with Google' to log in.");
+        }
+
         if (!passwordEncoder.matches(request.getPassword(), museum.getPassword())) {
             throw new RuntimeException("Invalid email or password");
         }
+
+        return getLoginData(museum);
+    }
+    
+    /* ── GOOGLE LOGIN ── */
+    public Map<String, Object> googleLogin(String idToken) {
+        GoogleOAuthService.GoogleUserInfo userInfo = googleOAuthService.verifyIdToken(idToken);
+        Museum museum = museumRepository.findByEmail(userInfo.getEmail())
+            .orElseThrow(() -> new RuntimeException("No museum registered with this Google email. Please register first."));
+            
+        return getLoginData(museum);
+    }
+    
+    private Map<String, Object> getLoginData(Museum museum) {
 
         String token = jwtUtil.generateToken(museum.getId().toString(), museum.getEmail(), "MUSEUM");
 
@@ -161,7 +192,27 @@ public class MuseumService {
         return stats;
     }
 
+    public List<Museum> getNearbyMuseums(double lat, double lon, double radius) {
+        List<Museum> museums = museumRepository.findNearbyMuseums(lat, lon, radius);
+        for (Museum m : museums) {
+            if (m.getLatitude() != null && m.getLongitude() != null) {
+                m.setDistance(calculateDistance(lat, lon, m.getLatitude(), m.getLongitude()));
+            }
+        }
+        return museums;
+    }
+
     /* ── HELPER ── */
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        double R = 6371; // Radius of the earth in km
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
     private String generateRandomStaffPin() {
         return String.format("%04d", 1000 + (int) (Math.random() * 9000));
     }

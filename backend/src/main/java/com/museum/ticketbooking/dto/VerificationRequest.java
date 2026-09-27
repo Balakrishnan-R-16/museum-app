@@ -5,13 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * DTO for verifying/marking a ticket as USED at museum entry.
- *
- * The visitor shows their ticket on phone.
- * Staff enters the permanent 4-digit museum staffPin.
- * Ticket status → USED.
- *
- * Frontend may send the code as either "staffPin" or "verificationCode" — both are handled.
+ * DTO for verifying/marking a ticket entry at museum gate.
+ * Now supports partial group entry via entryCount.
  */
 @Getter
 @Setter
@@ -38,6 +33,13 @@ public class VerificationRequest {
     private String type; // optional: ENTRY / SHOW
 
     /**
+     * Number of visitors entering now (partial group entry).
+     * If null, all remaining visitors will be admitted.
+     */
+    @Min(value = 1, message = "Entry count must be at least 1")
+    private Integer entryCount;
+
+    /**
      * Alias: frontend may send getVerificationCode() to read the staffPin value
      */
     public String getVerificationCode() { 
@@ -56,4 +58,7 @@ public class VerificationRequest {
 
     public String getType() { return type; }
     public void setType(String type) { this.type = type; }
+
+    public Integer getEntryCount() { return entryCount; }
+    public void setEntryCount(Integer entryCount) { this.entryCount = entryCount; }
 }
