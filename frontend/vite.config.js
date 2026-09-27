@@ -9,17 +9,17 @@ export default defineConfig({
     host: '127.0.0.1',
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',   // ← Spring Boot runs on 8080
+        target: 'https://museum-backend-eb4b.onrender.com',   // ← Spring Boot runs on Render
         changeOrigin: true,
         secure: false,
       },
       '/qr': {
-        target: 'http://localhost:8080',   // ← static QR images served by Spring Boot
+        target: 'https://museum-backend-eb4b.onrender.com',   // ← static QR images served by Spring Boot
         changeOrigin: true,
         secure: false,
       },
       '/uploads': {
-        target: 'http://localhost:8080',   // ← uploaded museum images served by Spring Boot
+        target: 'https://museum-backend-eb4b.onrender.com',   // ← uploaded museum images served by Spring Boot
         changeOrigin: true,
         secure: false,
       }

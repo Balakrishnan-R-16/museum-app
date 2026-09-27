@@ -19,7 +19,7 @@ class WebSocketService {
    * @param {function} onConnect - Callback when connected
    * @param {function} onError - Callback on error
    */
-  connect(wsUrl = 'ws://localhost:8080/ws', onConnect = null, onError = null) {
+  connect(wsUrl = 'wss://museum-backend-eb4b.onrender.com/ws', onConnect = null, onError = null) {
     this.stompClient = new StompJs.Client({
       brokerURL: wsUrl,
       reconnectDelay: 5000,
